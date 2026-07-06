@@ -338,7 +338,8 @@ function renderTree(
   const walk = (node: Line, prefix: string, isLast: boolean, isRoot: boolean) => {
     const branch = isRoot ? "" : isLast ? "└─ " : "├─ ";
     const mark = highlightPath.has(node.id) ? " «" : "";
-    const line = `${prefix}${branch}${GLYPH[node.status]} ${node.id}  ${node.goal}${mark}`;
+    const adopted = node.created_by === "adopt" ? "  [adopted]" : "";
+    const line = `${prefix}${branch}${GLYPH[node.status]} ${node.id}  ${node.goal}${adopted}${mark}`;
     if (!statusFilter || node.status === statusFilter) out.push(line);
     if (full && node.conclusion) {
       const cprefix = prefix + (isRoot ? "   " : isLast ? "    " : "│   ");
@@ -567,6 +568,9 @@ const DASHBOARD_HTML = `<!doctype html>
   .badge { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
   .badge.ok { color:var(--promising); border-color:color-mix(in srgb,var(--promising) 40%,var(--border)); }
   .badge.bad { color:#f85149; border-color:color-mix(in srgb,#f85149 40%,var(--border)); }
+  .badge.adopt { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
+  .tag-adopt { flex:none; font-size:10px; padding:0 6px; border-radius:999px; letter-spacing:.03em;
+               color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); }
   .dmeta { color:var(--muted); font-size:12px; margin:6px 0 14px; }
   .dsec { margin:16px 0; }
   .dsec h3 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
@@ -664,6 +668,7 @@ function walk(n, depth, html){
       '<span class="glyph">' + glyph(n) + '</span>' +
       '<span class="nid">' + esc(n.id) + '</span>' +
       '<span class="goal">' + esc(n.goal) + '</span>' +
+      (n.created_by === 'adopt' ? '<span class="tag-adopt">adopted</span>' : '') +
       '<span class="ago" data-ts="' + esc(n.ts || '') + '">' + agoLabel(n.ts) + '</span>' +
     '</div>'
   );
@@ -719,7 +724,8 @@ function renderDetail(d){
     '<div class="dpad">' +
       '<div class="dhead"><span class="glyph ' + statusClass(m) + '">' + glyph(m) + '</span>' +
         '<span class="nid">' + esc(m.id) + '</span>' +
-        '<span class="badge">' + esc(m.status) + '</span>' + nbBadge + '</div>' +
+        '<span class="badge">' + esc(m.status) + '</span>' + nbBadge +
+        (m.created_by === 'adopt' ? '<span class="badge adopt">adopted</span>' : '') + '</div>' +
       '<div class="dmeta">type ' + esc(m.type) + ' · by ' + esc(m.created_by) +
         (m.ts ? ' · updated ' + esc(agoLabel(m.ts)) : '') + '</div>' +
       '<div class="dsec"><h3>Goal</h3><div class="md">' + (md(d.goal) || '<p class="placeholder">no goal.md</p>') + '</div></div>' +

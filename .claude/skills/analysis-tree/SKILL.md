@@ -44,6 +44,12 @@ in [`references/node.md`](references/node.md) and
 `node tree.js show` to **remount** the tree and see the current frontier. Remounting *is*
 the entry step — continue the loop from there.
 
+**If the user wants to adopt existing analyses from this repo into a tree:** follow
+[`adopt.md`](adopt.md). It scaffolds the workspace, interviews for an objective, scans where you
+point it, and turns existing artifacts (notebooks, scripts, reports) into validated nodes —
+prompting the user to fill each node's contract gaps. It hands back to the loop below once the
+tree is built.
+
 ## The loop
 
 Repeat until a stop condition (below):

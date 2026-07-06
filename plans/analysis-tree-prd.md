@@ -208,6 +208,30 @@ cleanly** on a toy dataset.
 4. Auto loop: frontier reasoning, status transitions, stopping criteria
    (objective / frontier / max-nodes=12), human checkpoint every 10, opt-in parallel siblings.
 
+## 12. Adopt — importing existing analyses
+
+A third **entry branch** alongside new-exploration and resume: **adopt** scattered work that
+already exists in a repo (notebooks, scripts, reports) into a tree. Disclosed to
+`adopt.md` — the master reads it only on this branch; it hands back to the normal loop once the
+tree is built.
+
+- **Invents no new primitives.** An adopted node is an ordinary node validated against `node.md`;
+  a **"missing part" is a contract gap** (no `conclusion.md`, un-executed notebook, no
+  `objective.md`) detected by the same gate the master runs before committing any node. Placing
+  files into node folders is copying on top of `add`. **Zero CLI changes** — the only addition is
+  provenance: adopted nodes carry `created_by: adopt`.
+- **Propose-then-approve.** The master interviews for an objective (repos rarely state one),
+  scans where the user points it (or asks), inventories every candidate artifact exhaustively,
+  infers a candidate tree + artifact→node mapping (parent from folder layout, filename ordering,
+  cross-references), and renders the whole proposed tree for the user to edit **before creating
+  anything** — parentage is inferred and often wrong.
+- **Gap prompting.** Every adopted node is walked against its `node.md` contract; each gap is
+  surfaced to the user with the cheapest fix (state/draft a conclusion, run the notebook, confirm
+  the goal). A deferred gap must be explicit — the node stays `open` with the gap named in its
+  conclusion, never silently marked done.
+- **Completion:** every inventoried artifact is either an adopted node passing its contract or has
+  its gap explicitly accepted and reflected in status, with no scoped artifact dropped unseen.
+
 ---
 
 ## Appendix — decision log
@@ -231,3 +255,4 @@ cleanly** on a toy dataset.
 | Q15 | Prefer execute-notebooks, fallback nbconvert/papermill; `notebook_ok` = zero error outputs via `check-notebook` |
 | Q16 | Phase 1 (step mode) proven on real toy exploration before Phase 2 (auto mode) |
 | Q17 | `show` = terminal ASCII-tree viz (flags `--full`/`--status`/`--path`); `delete` blocks non-leaf by default (`--cascade`/`--reparent`), tombstone (`deleted`) + archive to `_deleted/` (`--purge` to rm) |
+| Q18 | **Adopt** — third entry branch, disclosed to `adopt.md`; propose-then-approve import of existing repo analyses; gaps = `node.md` contract failures on adopted nodes; `created_by: adopt`, zero CLI changes |
