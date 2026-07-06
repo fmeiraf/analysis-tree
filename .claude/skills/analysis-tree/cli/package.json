@@ -1,0 +1,12 @@
+{
+  "name": "analysis-tree-cli",
+  "private": true,
+  "description": "Build tooling for the analysis-tree CLI. Ships the compiled tree.js (zero runtime deps).",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  }
+}
