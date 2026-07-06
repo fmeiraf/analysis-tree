@@ -536,262 +536,736 @@ const DASHBOARD_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>analysis-tree · live</title>
+<title>analysis-tree · observatory</title>
 <style>
   :root {
-    --bg:#0f1115; --panel:#161a21; --panel2:#1b212b; --border:#252c38;
-    --fg:#e6e9ef; --muted:#8a94a6; --accent:#5b9dff;
-    --open:#8a94a6; --working:#f0b429; --promising:#3fb950; --answered:#5b9dff; --dead:#5a6273;
+    --field: oklch(0.15 0.018 250);
+    --field-lift: oklch(0.185 0.02 250);
+    --hairline: oklch(0.30 0.02 250);
+    --edge: oklch(0.34 0.02 250);
+    --ink: oklch(0.92 0.008 250);
+    --ink-dim: oklch(0.64 0.015 250);
+    --frontier: oklch(0.86 0.19 130);
+    --frontier-core: oklch(0.93 0.15 130);
+    --open: oklch(0.70 0.09 130);
+    --answered: oklch(0.70 0.04 210);
+    --dead: oklch(0.44 0.006 250);
+    --adopted: oklch(0.72 0.13 305);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --z-drawer: 40;
+    --z-hud: 20;
   }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg:#f6f7f9; --panel:#ffffff; --panel2:#f0f2f5; --border:#e2e6ec;
-      --fg:#1c2029; --muted:#6b7383; --accent:#2f6fd6;
-      --open:#6b7383; --working:#b9820a; --promising:#1a7f37; --answered:#2f6fd6; --dead:#9aa3b2;
-    }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 400 13px/1.5 var(--mono);
+    background: var(--field);
+    color: var(--ink);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* faint deep-field vignette so the center reads as depth, not a flat wall */
+    background-image: radial-gradient(120% 120% at 50% 42%, oklch(0.185 0.02 255) 0%, var(--field) 55%, oklch(0.12 0.016 250) 100%);
   }
-  * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif;
-         background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; }
-  header { display:flex; align-items:center; gap:12px; padding:10px 16px;
-           border-bottom:1px solid var(--border); background:var(--panel); }
-  header h1 { font-size:14px; font-weight:600; margin:0; letter-spacing:.02em; }
-  header .obj { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis;
-                white-space:nowrap; flex:1; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--dead); flex:none; }
-  .dot.live { background:var(--promising); box-shadow:0 0 0 3px color-mix(in srgb,var(--promising) 25%,transparent); }
-  main { flex:1; display:flex; min-height:0; }
-  #tree { flex:1; overflow:auto; padding:14px 10px; }
-  #detail { width:42%; max-width:560px; border-left:1px solid var(--border); background:var(--panel);
-            overflow:auto; padding:0; }
-  .row { display:flex; align-items:baseline; gap:7px; padding:3px 8px; border-radius:6px;
-         cursor:pointer; white-space:nowrap; }
-  .row:hover { background:var(--panel2); }
-  .row.sel { background:color-mix(in srgb,var(--accent) 18%,transparent); }
-  .row.frontier { }
-  .chev { width:12px; color:var(--muted); flex:none; cursor:pointer; user-select:none; font-size:11px; }
-  .glyph { flex:none; width:14px; text-align:center; font-size:13px; }
-  .s-open .glyph{color:var(--open);} .s-working .glyph{color:var(--working);}
-  .s-promising .glyph{color:var(--promising);} .s-answered .glyph{color:var(--answered);}
-  .s-dead-end .glyph{color:var(--dead);}
-  .s-working .glyph{ animation:pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
-  .nid { color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
-  .goal { overflow:hidden; text-overflow:ellipsis; }
-  .s-dead-end .goal { text-decoration:line-through; color:var(--muted); }
-  .frontier .goal { font-weight:600; }
-  .ago { color:var(--muted); font-size:11px; margin-left:6px; flex:none; }
-  .legend { color:var(--muted); font-size:12px; padding:8px 16px; border-top:1px solid var(--border);
-            background:var(--panel); display:flex; gap:16px; flex-wrap:wrap; }
-  .legend b { font-weight:400; }
-  .dpad { padding:16px 18px; }
-  .dhead { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
-  .dhead .nid { font-size:13px; }
-  .badge { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
-  .badge.ok { color:var(--promising); border-color:color-mix(in srgb,var(--promising) 40%,var(--border)); }
-  .badge.bad { color:#f85149; border-color:color-mix(in srgb,#f85149 40%,var(--border)); }
-  .badge.adopt { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); }
-  .tag-adopt { flex:none; font-size:10px; padding:0 6px; border-radius:999px; letter-spacing:.03em;
-               color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 35%,var(--border)); }
-  .dmeta { color:var(--muted); font-size:12px; margin:6px 0 14px; }
-  .dsec { margin:16px 0; }
-  .dsec h3 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
-             margin:0 0 6px; font-weight:600; }
-  .md { font-size:13.5px; }
-  .md h1,.md h2,.md h3 { font-size:14px; margin:12px 0 4px; }
-  .md code { background:var(--panel2); padding:1px 5px; border-radius:4px;
-             font-family:ui-monospace,Menlo,monospace; font-size:12px; }
-  .md pre { background:var(--panel2); padding:10px 12px; border-radius:8px; overflow:auto; }
-  .md pre code { background:none; padding:0; }
-  .md ul { margin:4px 0; padding-left:20px; }
-  .md a { color:var(--accent); }
-  .files a { color:var(--accent); text-decoration:none; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
-  .files span { margin-right:12px; }
-  .empty { color:var(--muted); padding:40px; text-align:center; }
-  .placeholder { color:var(--muted); padding:40px 20px; text-align:center; }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    height: 44px;
+    flex: none;
+    border-bottom: 1px solid var(--hairline);
+    background: color-mix(in oklch, var(--field) 82%, transparent);
+    backdrop-filter: blur(6px);
+    z-index: var(--z-hud);
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dead);
+    flex: none;
+    transition: background 0.3s var(--ease), box-shadow 0.3s var(--ease);
+  }
+  .dot.live {
+    background: var(--frontier);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--frontier) 22%, transparent),
+                0 0 10px color-mix(in oklch, var(--frontier) 55%, transparent);
+  }
+  .brand { font-weight: 600; letter-spacing: 0.01em; color: var(--ink); flex: none; }
+  .obj {
+    color: var(--ink-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+  }
+  .stamp { color: var(--ink-dim); font-size: 11px; flex: none; }
+
+  main { position: relative; flex: 1; min-height: 0; }
+  #sky { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #sky.dragging { cursor: grabbing; }
+
+  /* ---- edges ---- */
+  .edge { fill: none; stroke: var(--edge); stroke-width: 1; opacity: 0.6; }
+  .edge.to-frontier {
+    stroke: color-mix(in oklch, var(--frontier) 55%, var(--edge));
+    opacity: 0.85;
+  }
+
+  /* ---- nodes ---- */
+  .node { cursor: pointer; }
+  .node .hit { fill: transparent; }
+  .node .glyph {
+    font-family: var(--mono);
+    font-size: 19px;
+    font-weight: 500;
+    fill: var(--ink-dim);
+    transition: fill 0.35s var(--ease);
+    -webkit-user-select: none; user-select: none;
+  }
+  .node .label {
+    font-family: var(--mono);
+    font-size: 12px;
+    fill: var(--ink-dim);
+    opacity: 0;
+    transition: opacity 0.25s var(--ease), fill 0.25s var(--ease);
+    -webkit-user-select: none; user-select: none;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: color-mix(in oklch, var(--field) 78%, transparent);
+    stroke-width: 3px;
+  }
+  .node.labeled .label,
+  .node:hover .label,
+  #sky.zoomed .node .label { opacity: 1; }
+
+  /* status kinds — glyph shape carries state, color/glow reinforce */
+  .k-dead .glyph { fill: var(--dead); }
+  .k-dead .label { fill: var(--dead); text-decoration: line-through; }
+  .k-answered .glyph { fill: var(--answered); }
+  .k-answered .label { fill: color-mix(in oklch, var(--answered) 75%, var(--ink)); }
+  .k-open .glyph { fill: var(--open); }
+  .k-promising .glyph { fill: var(--frontier); }
+  .k-working .glyph { fill: var(--frontier-core); }
+  .node.labeled.k-promising .label,
+  .node.labeled.k-working .label { fill: color-mix(in oklch, var(--frontier) 82%, var(--ink)); }
+
+  /* glow: state through light, not chrome */
+  .node.glow .glyph { filter: drop-shadow(0 0 5px color-mix(in oklch, var(--frontier) 65%, transparent)); }
+  .node.k-working .glyph {
+    filter: drop-shadow(0 0 7px color-mix(in oklch, var(--frontier) 78%, transparent));
+    animation: breathe 2.4s var(--ease) infinite;
+  }
+  @keyframes breathe {
+    0%, 100% { opacity: 0.72; }
+    50%      { opacity: 1; }
+  }
+
+  /* adopted provenance — violet ring, distinct hue from phosphor */
+  .node.adopt .adopt-ring {
+    fill: none;
+    stroke: var(--adopted);
+    stroke-width: 1;
+    stroke-dasharray: 2 3;
+    opacity: 0.85;
+  }
+
+  /* selection + keyboard focus */
+  .node .sel-ring { fill: none; stroke: var(--frontier); stroke-width: 1.25; opacity: 0; transition: opacity 0.2s var(--ease); }
+  .node.sel .sel-ring { opacity: 0.9; }
+  .node:focus-visible { outline: none; }
+  .node:focus-visible .sel-ring { opacity: 0.9; stroke: var(--frontier-core); }
+
+  /* entrance of freshly-added nodes */
+  .node.enter { animation: appear 0.5s var(--ease) both; }
+  @keyframes appear {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* ---- HUD: controls + legend ---- */
+  .hud { position: absolute; z-index: var(--z-hud); display: flex; gap: 6px; }
+  .controls { right: 14px; bottom: 14px; flex-direction: column; }
+  .controls button {
+    font: 500 12px/1 var(--mono);
+    color: var(--ink-dim);
+    background: color-mix(in oklch, var(--field-lift) 88%, transparent);
+    border: 1px solid var(--hairline);
+    border-radius: 3px;
+    padding: 7px 9px;
+    min-width: 34px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: color 0.2s var(--ease), border-color 0.2s var(--ease), background 0.2s var(--ease);
+  }
+  .controls button:hover { color: var(--frontier); border-color: color-mix(in oklch, var(--frontier) 40%, var(--hairline)); }
+  .controls button:focus-visible { outline: 2px solid var(--frontier); outline-offset: 2px; }
+  .controls button:active { background: color-mix(in oklch, var(--field-lift) 70%, transparent); }
+
+  .legend { left: 14px; bottom: 14px; }
+  .legend > details {
+    background: color-mix(in oklch, var(--field-lift) 88%, transparent);
+    border: 1px solid var(--hairline);
+    border-radius: 3px;
+    backdrop-filter: blur(6px);
+    font-size: 11px;
+    color: var(--ink-dim);
+    min-width: 130px;
+  }
+  .legend summary {
+    list-style: none; cursor: pointer; padding: 7px 10px;
+    letter-spacing: 0.04em; text-transform: lowercase; color: var(--ink-dim);
+  }
+  .legend summary::-webkit-details-marker { display: none; }
+  .legend summary:hover { color: var(--ink); }
+  .legend .rows { padding: 2px 10px 9px; display: grid; gap: 4px; }
+  .legend .row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .legend .g { width: 12px; text-align: center; font-size: 13px; }
+  .legend .g.working { color: var(--frontier-core); }
+  .legend .g.promising { color: var(--frontier); }
+  .legend .g.open { color: var(--open); }
+  .legend .g.answered { color: var(--answered); }
+  .legend .g.dead { color: var(--dead); }
+  .legend .g.adopt { color: var(--adopted); }
+
+  /* ---- empty state ---- */
+  #empty {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    color: var(--ink-dim); pointer-events: none; text-align: center;
+  }
+  #empty.show { display: flex; }
+  #empty .glyph { font-size: 22px; color: var(--open); filter: drop-shadow(0 0 8px color-mix(in oklch, var(--frontier) 40%, transparent)); animation: breathe 2.8s var(--ease) infinite; }
+  #empty .msg { font-size: 12px; letter-spacing: 0.02em; }
+
+  /* ---- detail drawer ---- */
+  dialog#drawer {
+    position: fixed;
+    inset: 0 0 0 auto;
+    height: 100%;
+    width: min(440px, 92vw);
+    max-height: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-left: 1px solid var(--hairline);
+    background: var(--field-lift);
+    color: var(--ink);
+    box-shadow: -24px 0 60px -30px oklch(0 0 0 / 0.7);
+    overflow: auto;
+    z-index: var(--z-drawer);
+  }
+  dialog#drawer::backdrop { background: oklch(0.1 0.01 250 / 0.32); backdrop-filter: blur(1px); }
+  dialog#drawer[open] { animation: drawer-in 0.28s var(--ease); }
+  @keyframes drawer-in { from { transform: translateX(18px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  .d-pad { padding: 18px 20px 28px; }
+  .d-top { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
+  .d-top .glyph { font-size: 16px; }
+  .d-top .glyph.k-working, .d-top .glyph.k-promising { color: var(--frontier); }
+  .d-top .glyph.k-open { color: var(--open); }
+  .d-top .glyph.k-answered { color: var(--answered); }
+  .d-top .glyph.k-dead { color: var(--dead); }
+  .d-id { font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .d-close {
+    margin-left: auto; flex: none;
+    background: none; border: 1px solid var(--hairline); color: var(--ink-dim);
+    border-radius: 3px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; line-height: 1;
+    transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+  }
+  .d-close:hover { color: var(--ink); border-color: var(--ink-dim); }
+  .d-close:focus-visible { outline: 2px solid var(--frontier); outline-offset: 2px; }
+  .d-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 18px; }
+  .badge {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--hairline); color: var(--ink-dim); white-space: nowrap;
+  }
+  .badge.status { color: var(--ink); border-color: color-mix(in oklch, var(--ink-dim) 60%, var(--hairline)); }
+  .badge.status.working, .badge.status.promising { color: var(--frontier); border-color: color-mix(in oklch, var(--frontier) 45%, var(--hairline)); }
+  .badge.status.answered { color: var(--answered); border-color: color-mix(in oklch, var(--answered) 45%, var(--hairline)); }
+  .badge.status.dead { color: var(--dead); }
+  .badge.nb-ok { color: var(--frontier); border-color: color-mix(in oklch, var(--frontier) 45%, var(--hairline)); }
+  .badge.nb-bad { color: oklch(0.7 0.16 25); border-color: color-mix(in oklch, oklch(0.7 0.16 25) 45%, var(--hairline)); }
+  .badge.adopt { color: var(--adopted); border-color: color-mix(in oklch, var(--adopted) 45%, var(--hairline)); }
+  .d-meta { color: var(--ink-dim); font-size: 11px; margin-bottom: 20px; }
+  .d-sec { margin: 18px 0; }
+  .d-sec h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); margin: 0 0 7px; font-weight: 600; }
+  .md { font-size: 12.5px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
+  .md :first-child { margin-top: 0; }
+  .md :last-child { margin-bottom: 0; }
+  .md h1, .md h2, .md h3 { font-size: 13px; margin: 12px 0 4px; color: var(--ink); }
+  .md p { margin: 6px 0; }
+  .md code { background: color-mix(in oklch, var(--field) 60%, transparent); padding: 1px 5px; border-radius: 3px; font-size: 11.5px; }
+  .md pre { background: var(--field); padding: 10px 12px; border-radius: 5px; overflow: auto; border: 1px solid var(--hairline); }
+  .md pre code { background: none; padding: 0; }
+  .md ul { margin: 6px 0; padding-left: 18px; }
+  .md li { margin: 2px 0; }
+  .md a { color: var(--frontier); }
+  .none { color: var(--ink-dim); font-style: normal; opacity: 0.7; }
+  .files { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .files a { color: var(--frontier); text-decoration: none; font-size: 12px; }
+  .files a:hover { text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+    .node.k-working .glyph { opacity: 0.92; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <span class="dot" id="dot"></span>
-  <h1>analysis-tree</h1>
+  <span class="dot" id="dot" title="live connection"></span>
+  <span class="brand">analysis-tree</span>
   <span class="obj" id="obj"></span>
-  <span class="ago" id="stamp"></span>
+  <span class="stamp" id="stamp"></span>
 </header>
 <main>
-  <div id="tree"><div class="empty">connecting…</div></div>
-  <aside id="detail"><div class="placeholder">Select a node to see its goal &amp; conclusion.</div></aside>
+  <svg id="sky" role="tree" aria-label="analysis tree constellation">
+    <g id="viewport">
+      <g id="edges"></g>
+      <g id="nodes"></g>
+    </g>
+  </svg>
+
+  <div id="empty">
+    <div class="glyph">○</div>
+    <div class="msg">waiting for the first node…</div>
+  </div>
+
+  <div class="hud legend">
+    <details>
+      <summary>legend</summary>
+      <div class="rows">
+        <div class="row"><span class="g working">◐</span> working</div>
+        <div class="row"><span class="g promising">●</span> promising</div>
+        <div class="row"><span class="g open">○</span> open</div>
+        <div class="row"><span class="g answered">✓</span> answered</div>
+        <div class="row"><span class="g dead">✗</span> dead-end</div>
+        <div class="row"><span class="g adopt">◌</span> adopted</div>
+      </div>
+    </details>
+  </div>
+
+  <div class="hud controls">
+    <button id="c-fit" title="Zoom to fit (F)">fit</button>
+    <button id="c-front" title="Recenter on frontier (C)">◉</button>
+    <button id="c-in" title="Zoom in (+)" aria-label="zoom in">+</button>
+    <button id="c-out" title="Zoom out (−)" aria-label="zoom out">−</button>
+  </div>
 </main>
-<div class="legend">
-  <b><span style="color:var(--working)">◐</span> working</b>
-  <b><span style="color:var(--open)">○</span> open</b>
-  <b><span style="color:var(--promising)">●</span> promising</b>
-  <b><span style="color:var(--answered)">✓</span> answered</b>
-  <b><span style="color:var(--dead)">✗</span> dead-end</b>
-</div>
+
+<dialog id="drawer" aria-label="node detail"></dialog>
+
 <script>
-var state = { nodes: [], byId: {}, kids: {}, selected: null, collapsed: {}, lastEvent: 0 };
+"use strict";
+const els = {
+  sky: document.getElementById("sky"),
+  vp: document.getElementById("viewport"),
+  edges: document.getElementById("edges"),
+  nodes: document.getElementById("nodes"),
+  empty: document.getElementById("empty"),
+  dot: document.getElementById("dot"),
+  obj: document.getElementById("obj"),
+  stamp: document.getElementById("stamp"),
+  drawer: document.getElementById("drawer"),
+};
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const RING = 165;
+const ZOOM_LABEL_THRESHOLD = 1.35;
 
-function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
-  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+const state = {
+  nodes: [],
+  layout: { byId: new Map(), kids: new Map(), roots: [], pos: new Map() },
+  known: new Set(),
+  selected: null,
+  view: { tx: 0, ty: 0, s: 1 },
+  lastEvent: 0,
+  firstLoad: true,
+  raf: 0,
+  returnFocusId: null,
+};
 
-function agoLabel(ts){
-  if(!ts) return '';
-  var d = Date.now() - Date.parse(ts);
-  if(isNaN(d)) return '';
-  var s = Math.round(d/1000);
-  if(s < 5) return 'just now';
-  if(s < 60) return s + 's ago';
-  var m = Math.round(s/60); if(m < 60) return m + 'm ago';
-  var h = Math.round(m/60); if(h < 24) return h + 'h ago';
-  return Math.round(h/24) + 'd ago';
+/* ---------- helpers ---------- */
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+function shortId(id) {
+  if (id === "node_0_root") return "root";
+  return id.replace(/^node_\\d+_/, "") || id;
+}
+function agoLabel(ts) {
+  if (!ts) return "";
+  const d = Date.now() - Date.parse(ts);
+  if (isNaN(d)) return "";
+  const s = Math.round(d / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return s + "s ago";
+  const m = Math.round(s / 60); if (m < 60) return m + "m ago";
+  const h = Math.round(m / 60); if (h < 24) return h + "h ago";
+  return Math.round(h / 24) + "d ago";
+}
+function statusKind(n) {
+  if (!n.parent_id) return "open"; // root is a calm anchor, never a pulsing "working" node
+  if (n.status === "dead-end") return "dead";
+  if (n.status === "answered") return "answered";
+  if (n.status === "promising") return "promising";
+  if (n.status === "open" && !n.conclusion) return "working";
+  return "open";
+}
+function glyphChar(n) {
+  const k = statusKind(n);
+  return k === "promising" ? "●" : k === "answered" ? "✓" : k === "dead" ? "✗" : k === "working" ? "◐" : "○";
+}
+function isFrontier(n) { return n.status === "open" || n.status === "promising"; }
+
+/* ---------- layout: radial tidy tree ---------- */
+function computeLayout(nodes) {
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const kids = new Map();
+  const roots = [];
+  for (const n of nodes) {
+    if (n.parent_id && byId.has(n.parent_id)) {
+      if (!kids.has(n.parent_id)) kids.set(n.parent_id, []);
+      kids.get(n.parent_id).push(n);
+    } else {
+      roots.push(n);
+    }
+  }
+  for (const arr of kids.values()) arr.sort((a, b) => a.seq - b.seq);
+  roots.sort((a, b) => a.seq - b.seq);
+
+  const depth = new Map();
+  const angle = new Map();
+  const leaves = [];
+  const post = [];
+  const seen = new Set();
+  function dfs(n, d) {
+    if (seen.has(n.id)) return; // guard against cycles from bad data
+    seen.add(n.id);
+    depth.set(n.id, d);
+    const ch = kids.get(n.id) || [];
+    if (ch.length === 0) leaves.push(n.id);
+    for (const c of ch) dfs(c, d + 1);
+    post.push(n.id);
+  }
+  for (const r of roots) dfs(r, 0);
+
+  const leafCount = Math.max(leaves.length, 1);
+  // leave a small gap at the top so the ring doesn't wrap onto itself
+  const SPAN = Math.PI * 2 * (leaves.length > 1 ? 0.92 : 1);
+  const START = -Math.PI / 2 - SPAN / 2 + (leaves.length > 1 ? 0 : Math.PI / 2);
+  leaves.forEach((id, i) => angle.set(id, leafCount === 1 ? 0 : START + (i + 0.5) / leafCount * SPAN));
+  for (const id of post) {
+    const ch = kids.get(id) || [];
+    if (ch.length) {
+      let sum = 0;
+      for (const c of ch) sum += angle.get(c.id) || 0;
+      angle.set(id, sum / ch.length);
+    }
+  }
+
+  const pos = new Map();
+  for (const n of nodes) {
+    const d = depth.get(n.id) || 0;
+    const a = angle.get(n.id) || 0;
+    const r = d * RING;
+    pos.set(n.id, { x: Math.cos(a) * r, y: Math.sin(a) * r, a, d, r });
+  }
+  return { byId, kids, roots, pos };
 }
 
-function glyph(n){
-  if(n.status === 'promising') return '●';
-  if(n.status === 'answered') return '✓';
-  if(n.status === 'dead-end') return '✗';
-  if(n.status === 'open' && !n.conclusion) return '◐';
-  return '○';
-}
-function statusClass(n){
-  if(n.status === 'open' && !n.conclusion) return 's-working';
-  return 's-' + n.status;
-}
-function isFrontier(n){ return n.status === 'open' || n.status === 'promising'; }
-
-function index(){
-  state.byId = {}; state.kids = {};
-  state.nodes.forEach(function(n){ state.byId[n.id] = n; });
-  state.nodes.forEach(function(n){
-    var p = n.parent_id;
-    if(p){ (state.kids[p] = state.kids[p] || []).push(n); }
-  });
+function edgePath(p, c) {
+  const rm = (p.r + c.r) / 2;
+  const c1x = Math.cos(p.a) * rm, c1y = Math.sin(p.a) * rm;
+  const c2x = Math.cos(c.a) * rm, c2y = Math.sin(c.a) * rm;
+  return "M" + p.x.toFixed(1) + "," + p.y.toFixed(1) +
+         " C" + c1x.toFixed(1) + "," + c1y.toFixed(1) +
+         " " + c2x.toFixed(1) + "," + c2y.toFixed(1) +
+         " " + c.x.toFixed(1) + "," + c.y.toFixed(1);
 }
 
-function renderTree(){
-  index();
-  var roots = state.nodes.filter(function(n){ return !n.parent_id; });
-  var host = document.getElementById('tree');
-  if(state.nodes.length === 0){ host.innerHTML = '<div class="empty">Empty tree — waiting for the first node…</div>'; return; }
-  var html = [];
-  roots.forEach(function(r){ walk(r, 0, html); });
-  host.innerHTML = html.join('');
+/* ---------- render ---------- */
+function render() {
+  const L = state.layout;
+  els.empty.classList.toggle("show", state.nodes.length <= 1 && state.nodes.every(n => !n.parent_id));
+
+  let edges = "";
+  for (const n of state.nodes) {
+    if (n.parent_id && L.pos.has(n.parent_id) && L.pos.has(n.id)) {
+      const cls = isFrontier(n) ? "edge to-frontier" : "edge";
+      edges += '<path class="' + cls + '" vector-effect="non-scaling-stroke" d="' + edgePath(L.pos.get(n.parent_id), L.pos.get(n.id)) + '"/>';
+    }
+  }
+  els.edges.innerHTML = edges;
+
+  let out = "";
+  for (const n of state.nodes) {
+    const pt = L.pos.get(n.id);
+    if (!pt) continue;
+    const kind = statusKind(n);
+    const fr = isFrontier(n);
+    const labeled = fr || pt.d === 0 || state.selected === n.id;
+    const cls = ["node", "k-" + kind];
+    if (fr) cls.push("glow");
+    if (labeled) cls.push("labeled");
+    if (n.created_by === "adopt") cls.push("adopt");
+    if (state.selected === n.id) cls.push("sel");
+    if (!state.known.has(n.id) && !state.firstLoad) cls.push("enter");
+    const side = Math.cos(pt.a) >= 0 ? 1 : -1;
+    const lx = pt.d === 0 ? 0 : side * 15;
+    const ly = pt.d === 0 ? 24 : 0;
+    const anchor = pt.d === 0 ? "middle" : (side > 0 ? "start" : "end");
+    out +=
+      '<g class="' + cls.join(" ") + '" data-id="' + esc(n.id) + '" transform="translate(' + pt.x.toFixed(1) + " " + pt.y.toFixed(1) + ')" tabindex="0" role="treeitem" aria-label="' + esc(shortId(n.id) + ": " + n.goal + " (" + kind + ")") + '">' +
+      (n.created_by === "adopt" ? '<circle class="adopt-ring" r="13" vector-effect="non-scaling-stroke"/>' : "") +
+      '<circle class="sel-ring" r="14" vector-effect="non-scaling-stroke"/>' +
+      '<circle class="hit" r="15"/>' +
+      '<text class="glyph" text-anchor="middle" dominant-baseline="central">' + glyphChar(n) + "</text>" +
+      '<text class="label" x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" dominant-baseline="central">' + esc(shortId(n.id)) + "</text>" +
+      "</g>";
+  }
+  els.nodes.innerHTML = out;
+  for (const n of state.nodes) state.known.add(n.id);
 }
 
-function walk(n, depth, html){
-  var kids = state.kids[n.id] || [];
-  var collapsed = !!state.collapsed[n.id];
-  var chev = kids.length ? (collapsed ? '▸' : '▾') : '';
-  var cls = 'row ' + statusClass(n) + (isFrontier(n) ? ' frontier' : '') + (state.selected === n.id ? ' sel' : '');
-  html.push(
-    '<div class="' + cls + '" data-id="' + esc(n.id) + '" style="padding-left:' + (8 + depth*18) + 'px">' +
-      '<span class="chev" data-chev="' + esc(n.id) + '">' + chev + '</span>' +
-      '<span class="glyph">' + glyph(n) + '</span>' +
-      '<span class="nid">' + esc(n.id) + '</span>' +
-      '<span class="goal">' + esc(n.goal) + '</span>' +
-      (n.created_by === 'adopt' ? '<span class="tag-adopt">adopted</span>' : '') +
-      '<span class="ago" data-ts="' + esc(n.ts || '') + '">' + agoLabel(n.ts) + '</span>' +
-    '</div>'
-  );
-  if(!collapsed) kids.forEach(function(k){ walk(k, depth+1, html); });
+/* ---------- camera ---------- */
+function viewport() { return els.sky.getBoundingClientRect(); }
+function applyView() {
+  const v = state.view;
+  els.vp.setAttribute("transform", "translate(" + v.tx.toFixed(2) + " " + v.ty.toFixed(2) + ") scale(" + v.s.toFixed(4) + ")");
+  els.sky.classList.toggle("zoomed", v.s >= ZOOM_LABEL_THRESHOLD);
+}
+function clampScale(s) { return Math.max(0.12, Math.min(3.2, s)); }
+
+function zoomAt(clientX, clientY, factor) {
+  const r = viewport();
+  const px = clientX - r.left, py = clientY - r.top;
+  const v = state.view;
+  const s2 = clampScale(v.s * factor);
+  v.tx = px - (px - v.tx) * (s2 / v.s);
+  v.ty = py - (py - v.ty) * (s2 / v.s);
+  v.s = s2;
+  cancelCamera();
+  applyView();
 }
 
-// --- tiny markdown renderer (headings, bold, italic, code, lists, links, paras) ---
-function mdInline(s){
+function cancelCamera() { if (state.raf) { cancelAnimationFrame(state.raf); state.raf = 0; } }
+function animateTo(target) {
+  cancelCamera();
+  const from = { tx: state.view.tx, ty: state.view.ty, s: state.view.s };
+  if (reduceMotion) { state.view = { ...target }; applyView(); return; }
+  const t0 = performance.now(), dur = 520;
+  const ease = t => 1 - Math.pow(1 - t, 4);
+  const step = now => {
+    const k = Math.min(1, (now - t0) / dur), e = ease(k);
+    state.view.tx = from.tx + (target.tx - from.tx) * e;
+    state.view.ty = from.ty + (target.ty - from.ty) * e;
+    state.view.s = from.s + (target.s - from.s) * e;
+    applyView();
+    if (k < 1) state.raf = requestAnimationFrame(step); else state.raf = 0;
+  };
+  state.raf = requestAnimationFrame(step);
+}
+
+function bbox() {
+  const pts = [...state.layout.pos.values()];
+  if (!pts.length) return { minX: -1, minY: -1, maxX: 1, maxY: 1 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+  return { minX, minY, maxX, maxY };
+}
+function fitView(animate) {
+  const r = viewport(), b = bbox();
+  const pad = 90;
+  const w = Math.max(b.maxX - b.minX, 1), h = Math.max(b.maxY - b.minY, 1);
+  const s = clampScale(Math.min((r.width - pad * 2) / w, (r.height - pad * 2) / h, 1.5));
+  const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+  const target = { s, tx: r.width / 2 - cx * s, ty: r.height / 2 - cy * s };
+  if (animate) animateTo(target); else { state.view = target; applyView(); }
+}
+function centerOn(id, animate) {
+  const pt = state.layout.pos.get(id);
+  if (!pt) return;
+  const r = viewport();
+  const s = Math.max(state.view.s, 0.7);
+  const target = { s, tx: r.width / 2 - pt.x * s, ty: r.height / 2 - pt.y * s };
+  if (animate) animateTo(target); else { state.view = target; applyView(); }
+}
+function newestFrontier() {
+  let best = null;
+  for (const n of state.nodes) if (isFrontier(n) && (!best || n.seq > best.seq)) best = n;
+  if (!best) for (const n of state.nodes) if (!best || n.seq > best.seq) best = n;
+  return best;
+}
+
+/* ---------- pan / zoom input ---------- */
+let drag = null;
+els.sky.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  drag = { x: e.clientX, y: e.clientY, tx: state.view.tx, ty: state.view.ty, moved: false, node: e.target.closest(".node") };
+  els.sky.setPointerCapture(e.pointerId);
+});
+els.sky.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; els.sky.classList.add("dragging"); cancelCamera(); }
+  if (drag.moved) { state.view.tx = drag.tx + dx; state.view.ty = drag.ty + dy; applyView(); }
+});
+els.sky.addEventListener("pointerup", e => {
+  els.sky.classList.remove("dragging");
+  if (drag && !drag.moved && drag.node) selectNode(drag.node.getAttribute("data-id"));
+  drag = null;
+});
+els.sky.addEventListener("pointercancel", () => { drag = null; els.sky.classList.remove("dragging"); });
+els.sky.addEventListener("wheel", e => {
+  e.preventDefault();
+  zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0016));
+}, { passive: false });
+
+els.nodes.addEventListener("keydown", e => {
+  const g = e.target.closest(".node");
+  if (!g) return;
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectNode(g.getAttribute("data-id")); }
+});
+
+document.getElementById("c-fit").addEventListener("click", () => fitView(true));
+document.getElementById("c-front").addEventListener("click", () => { const n = newestFrontier(); if (n) centerOn(n.id, true); });
+document.getElementById("c-in").addEventListener("click", () => { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25); });
+document.getElementById("c-out").addEventListener("click", () => { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 0.8); });
+
+window.addEventListener("keydown", e => {
+  if (e.target.closest("dialog")) return;
+  if (e.key === "f" || e.key === "F") fitView(true);
+  else if (e.key === "c" || e.key === "C") { const n = newestFrontier(); if (n) centerOn(n.id, true); }
+  else if (e.key === "+" || e.key === "=") { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25); }
+  else if (e.key === "-" || e.key === "_") { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 0.8); }
+});
+window.addEventListener("resize", () => applyView());
+
+/* ---------- detail drawer ---------- */
+function mdInline(s) {
   s = esc(s);
-  s = s.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
-  s = s.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
-  s = s.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
+  s = s.replace(/\`([^\`]+)\`/g, "<code>$1</code>");
+  s = s.replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>");
+  s = s.replace(/\\*([^*]+)\\*/g, "<em>$1</em>");
   s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   return s;
 }
-function md(src){
-  if(!src) return '';
-  var lines = src.replace(/\\r/g,'').split('\\n');
-  var out = [], i = 0, inCode = false, code = [], list = false;
-  function closeList(){ if(list){ out.push('</ul>'); list = false; } }
-  for(i=0;i<lines.length;i++){
-    var ln = lines[i];
-    if(/^\`\`\`/.test(ln)){
-      if(inCode){ out.push('<pre><code>' + esc(code.join('\\n')) + '</code></pre>'); code=[]; inCode=false; }
+function md(src) {
+  if (!src) return "";
+  const lines = src.replace(/\\r/g, "").split("\\n");
+  const out = []; let inCode = false, code = [], list = false;
+  const closeList = () => { if (list) { out.push("</ul>"); list = false; } };
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (/^\`\`\`/.test(ln)) {
+      if (inCode) { out.push("<pre><code>" + esc(code.join("\\n")) + "</code></pre>"); code = []; inCode = false; }
       else { closeList(); inCode = true; }
       continue;
     }
-    if(inCode){ code.push(ln); continue; }
-    var h = ln.match(/^(#{1,6})\\s+(.*)$/);
-    if(h){ closeList(); out.push('<h3>' + mdInline(h[2]) + '</h3>'); continue; }
-    var li = ln.match(/^\\s*[-*]\\s+(.*)$/);
-    if(li){ if(!list){ out.push('<ul>'); list = true; } out.push('<li>' + mdInline(li[1]) + '</li>'); continue; }
-    if(ln.trim() === ''){ closeList(); continue; }
-    closeList(); out.push('<p>' + mdInline(ln) + '</p>');
+    if (inCode) { code.push(ln); continue; }
+    const h = ln.match(/^(#{1,6})\\s+(.*)$/);
+    if (h) { closeList(); out.push("<h3>" + mdInline(h[2]) + "</h3>"); continue; }
+    const li = ln.match(/^\\s*[-*]\\s+(.*)$/);
+    if (li) { if (!list) { out.push("<ul>"); list = true; } out.push("<li>" + mdInline(li[1]) + "</li>"); continue; }
+    if (ln.trim() === "") { closeList(); continue; }
+    closeList(); out.push("<p>" + mdInline(ln) + "</p>");
   }
-  if(inCode) out.push('<pre><code>' + esc(code.join('\\n')) + '</code></pre>');
+  if (inCode) out.push("<pre><code>" + esc(code.join("\\n")) + "</code></pre>");
   closeList();
-  return out.join('');
+  return out.join("");
 }
 
-function renderDetail(d){
-  var host = document.getElementById('detail');
-  if(!d){ host.innerHTML = '<div class="placeholder">Node not found.</div>'; return; }
-  var m = d.meta;
-  var nbBadge = '';
-  if(m.notebook_ok === true) nbBadge = '<span class="badge ok">notebook ✓</span>';
-  else if(m.notebook_ok === false) nbBadge = '<span class="badge bad">notebook ✗</span>';
-  var files = (d.files||[]).map(function(f){
-    return '<span><a href="/api/file?id=' + encodeURIComponent(m.id) + '&name=' + encodeURIComponent(f) +
-           '" target="_blank" rel="noopener">' + esc(f) + '</a></span>';
-  }).join('');
-  host.innerHTML =
-    '<div class="dpad">' +
-      '<div class="dhead"><span class="glyph ' + statusClass(m) + '">' + glyph(m) + '</span>' +
-        '<span class="nid">' + esc(m.id) + '</span>' +
-        '<span class="badge">' + esc(m.status) + '</span>' + nbBadge +
-        (m.created_by === 'adopt' ? '<span class="badge adopt">adopted</span>' : '') + '</div>' +
-      '<div class="dmeta">type ' + esc(m.type) + ' · by ' + esc(m.created_by) +
-        (m.ts ? ' · updated ' + esc(agoLabel(m.ts)) : '') + '</div>' +
-      '<div class="dsec"><h3>Goal</h3><div class="md">' + (md(d.goal) || '<p class="placeholder">no goal.md</p>') + '</div></div>' +
-      '<div class="dsec"><h3>Conclusion</h3><div class="md">' + (md(d.conclusion) || '<p style="color:var(--muted)">— not concluded yet —</p>') + '</div></div>' +
-      (files ? '<div class="dsec"><h3>Files</h3><div class="files">' + files + '</div></div>' : '') +
-    '</div>';
-}
-
-function select(id){
+function selectNode(id) {
   state.selected = id;
-  renderTree();
-  fetch('/api/node/' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(renderDetail);
+  state.returnFocusId = id;
+  render();
+  centerOn(id, true);
+  fetch("/api/node/" + encodeURIComponent(id)).then(r => r.json()).then(renderDrawer).catch(() => {});
 }
-
-document.getElementById('tree').addEventListener('click', function(e){
-  var chev = e.target.getAttribute('data-chev');
-  if(chev){ state.collapsed[chev] = !state.collapsed[chev]; renderTree(); return; }
-  var row = e.target.closest('.row');
-  if(row){ select(row.getAttribute('data-id')); }
+function renderDrawer(d) {
+  if (!d) return;
+  const m = d.meta;
+  const kind = statusKind(m);
+  const nb = m.notebook_ok === true ? '<span class="badge nb-ok">notebook ✓</span>'
+           : m.notebook_ok === false ? '<span class="badge nb-bad">notebook ✗</span>' : "";
+  const adopted = m.created_by === "adopt" ? '<span class="badge adopt">adopted</span>' : "";
+  const files = (d.files || []).map(f =>
+    '<a href="/api/file?id=' + encodeURIComponent(m.id) + "&name=" + encodeURIComponent(f) + '" target="_blank" rel="noopener">' + esc(f) + "</a>"
+  ).join("");
+  els.drawer.innerHTML =
+    '<div class="d-pad">' +
+      '<div class="d-top">' +
+        '<span class="glyph k-' + kind + '">' + glyphChar(m) + "</span>" +
+        '<span class="d-id">' + esc(m.id) + "</span>" +
+        '<button class="d-close" id="d-close" aria-label="close" title="Close (Esc)">✕</button>' +
+      "</div>" +
+      '<div class="d-badges">' +
+        '<span class="badge status ' + kind + '">' + esc(m.status) + "</span>" +
+        '<span class="badge">' + esc(m.type) + "</span>" + nb + adopted +
+      "</div>" +
+      '<div class="d-meta">seq ' + esc(m.seq) + " · by " + esc(m.created_by) + (m.ts ? " · updated " + esc(agoLabel(m.ts)) : "") + "</div>" +
+      '<div class="d-sec"><h3>Goal</h3><div class="md">' + (md(d.goal) || '<span class="none">no goal.md</span>') + "</div></div>" +
+      '<div class="d-sec"><h3>Conclusion</h3><div class="md">' + (md(d.conclusion) || '<span class="none">— not concluded yet —</span>') + "</div></div>" +
+      (files ? '<div class="d-sec"><h3>Files</h3><div class="files">' + files + "</div></div>" : "") +
+    "</div>";
+  document.getElementById("d-close").addEventListener("click", () => els.drawer.close());
+  if (!els.drawer.open) els.drawer.showModal();
+}
+els.drawer.addEventListener("click", e => {
+  // light-dismiss when clicking the backdrop area outside the panel
+  const r = els.drawer.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) els.drawer.close();
+});
+els.drawer.addEventListener("close", () => {
+  const prev = state.returnFocusId;
+  state.selected = null;
+  render();
+  if (prev) { const g = els.nodes.querySelector('[data-id="' + (window.CSS && CSS.escape ? CSS.escape(prev) : prev) + '"]'); if (g) g.focus(); }
 });
 
-function refreshAgos(){
-  document.querySelectorAll('.ago[data-ts]').forEach(function(el){
-    el.textContent = agoLabel(el.getAttribute('data-ts'));
-  });
-  var st = document.getElementById('stamp');
-  if(state.lastEvent) st.textContent = 'updated ' + agoLabel(new Date(state.lastEvent).toISOString());
+/* ---------- data / live ---------- */
+function ingest(nodes) {
+  const prevKnown = new Set(state.known);
+  state.nodes = nodes;
+  state.layout = computeLayout(nodes);
+  render();
+  if (state.firstLoad) {
+    fitView(false);
+    state.firstLoad = false;
+  } else {
+    const fresh = nodes.filter(n => !prevKnown.has(n.id));
+    if (fresh.length) {
+      let newest = fresh[0];
+      for (const n of fresh) if (n.seq > newest.seq) newest = n;
+      centerOn(newest.id, true);
+    }
+    if (state.selected) {
+      // keep drawer content fresh if the selected node changed
+      fetch("/api/node/" + encodeURIComponent(state.selected)).then(r => r.json()).then(d => { if (d && els.drawer.open) renderDrawer(d); }).catch(() => {});
+    }
+  }
+}
+
+function refreshAgos() {
+  if (state.lastEvent) els.stamp.textContent = "updated " + agoLabel(new Date(state.lastEvent).toISOString());
 }
 setInterval(refreshAgos, 5000);
 
-fetch('/api/objective').then(function(r){ return r.text(); }).then(function(t){
-  var first = (t.split('\\n').find(function(l){ return l.trim() && !l.trim().startsWith('#'); }) || '').trim();
-  document.getElementById('obj').textContent = first || t.trim().split('\\n')[0] || '';
-});
+fetch("/api/objective").then(r => r.text()).then(t => {
+  const first = (t.split("\\n").find(l => l.trim() && !l.trim().startsWith("#")) || "").trim();
+  els.obj.textContent = first || (t.trim().split("\\n")[0] || "");
+}).catch(() => {});
 
-var es = new EventSource('/events');
-es.addEventListener('tree', function(e){
-  state.nodes = JSON.parse(e.data);
+const es = new EventSource("/events");
+es.addEventListener("tree", e => {
   state.lastEvent = Date.now();
-  renderTree();
-  if(state.selected) select(state.selected);
-  document.getElementById('dot').classList.add('live');
+  els.dot.classList.add("live");
+  refreshAgos();
+  ingest(JSON.parse(e.data));
 });
-es.onerror = function(){ document.getElementById('dot').classList.remove('live'); };
+es.onerror = () => els.dot.classList.remove("live");
 </script>
 </body>
 </html>`;
