@@ -640,6 +640,11 @@ const DASHBOARD_HTML = `<!doctype html>
   .node:hover .label,
   .node.sel .label,
   #sky.zoomed .node .label { opacity: 1; }
+  /* when a label is shown, its full text is a click target for the node (not just the glyph) */
+  .node.labeled .label,
+  .node:hover .label,
+  .node.sel .label,
+  #sky.zoomed .node .label { pointer-events: bounding-box; cursor: pointer; }
 
   /* status kinds — glyph shape carries state, color/glow reinforce */
   .k-dead .glyph { fill: var(--dead); }
@@ -761,37 +766,76 @@ const DASHBOARD_HTML = `<!doctype html>
   dialog#drawer[open] { animation: drawer-in 0.28s var(--ease); }
   @keyframes drawer-in { from { transform: translateX(18px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-  .d-pad { padding: 18px 20px 28px; }
-  .d-top { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
-  .d-top .glyph { font-size: 16px; }
-  .d-top .glyph.k-working, .d-top .glyph.k-promising { color: var(--frontier); }
-  .d-top .glyph.k-open { color: var(--open); }
-  .d-top .glyph.k-answered { color: var(--answered); }
-  .d-top .glyph.k-dead { color: var(--dead); }
-  .d-id { font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .d-pad { padding: 20px 22px 32px; }
+
+  /* title: human slug up top, canonical id quiet beneath */
+  .d-titlebar { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 15px; }
+  .d-title { min-width: 0; flex: 1; }
+  .d-slug { font-size: 17px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; overflow-wrap: anywhere; line-height: 1.25; }
+  .d-fullid { font-size: 11px; color: var(--ink-dim); margin-top: 3px; overflow-wrap: anywhere; opacity: 0.82; }
   .d-close {
-    margin-left: auto; flex: none;
+    flex: none; margin-top: 1px;
     background: none; border: 1px solid var(--hairline); color: var(--ink-dim);
-    border-radius: 3px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; line-height: 1;
-    transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+    border-radius: 4px; width: 27px; height: 27px; cursor: pointer; font-size: 13px; line-height: 1;
+    transition: color 0.2s var(--ease), border-color 0.2s var(--ease), background 0.2s var(--ease);
   }
-  .d-close:hover { color: var(--ink); border-color: var(--ink-dim); }
+  .d-close:hover { color: var(--ink); border-color: var(--ink-dim); background: color-mix(in oklch, var(--field) 50%, transparent); }
   .d-close:focus-visible { outline: 2px solid var(--frontier); outline-offset: 2px; }
-  .d-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 18px; }
-  .badge {
-    font-size: 11px; padding: 2px 9px; border-radius: 999px;
-    border: 1px solid var(--hairline); color: var(--ink-dim); white-space: nowrap;
+
+  /* status hero — the node's state read pre-attentively through light + glyph + words */
+  .d-hero {
+    --tone: var(--open);
+    display: flex; align-items: flex-start; gap: 13px;
+    padding: 13px 15px; margin-bottom: 15px;
+    border: 1px solid color-mix(in oklch, var(--tone) 32%, var(--hairline));
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--tone) 9%, var(--field));
   }
-  .badge.status { color: var(--ink); border-color: color-mix(in oklch, var(--ink-dim) 60%, var(--hairline)); }
-  .badge.status.working, .badge.status.promising { color: var(--frontier); border-color: color-mix(in oklch, var(--frontier) 45%, var(--hairline)); }
-  .badge.status.answered { color: var(--answered); border-color: color-mix(in oklch, var(--answered) 45%, var(--hairline)); }
-  .badge.status.dead { color: var(--dead); }
-  .badge.nb-ok { color: var(--frontier); border-color: color-mix(in oklch, var(--frontier) 45%, var(--hairline)); }
-  .badge.nb-bad { color: oklch(0.7 0.16 25); border-color: color-mix(in oklch, oklch(0.7 0.16 25) 45%, var(--hairline)); }
-  .badge.adopt { color: var(--adopted); border-color: color-mix(in oklch, var(--adopted) 45%, var(--hairline)); }
-  .d-meta { color: var(--ink-dim); font-size: 11px; margin-bottom: 20px; }
-  .d-sec { margin: 18px 0; }
-  .d-sec h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-dim); margin: 0 0 7px; font-weight: 600; }
+  .d-hero.k-working, .d-hero.k-promising { --tone: var(--frontier); }
+  .d-hero.k-open     { --tone: var(--open); }
+  .d-hero.k-answered { --tone: var(--answered); }
+  .d-hero.k-dead     { --tone: var(--dead); }
+  .d-hero .d-glyph {
+    font-size: 25px; line-height: 1; flex: none; color: var(--tone);
+    filter: drop-shadow(0 0 8px color-mix(in oklch, var(--tone) 45%, transparent));
+  }
+  .d-hero.k-dead .d-glyph { filter: none; opacity: 0.85; }
+  .d-hero.k-working .d-glyph { animation: breathe 2.4s var(--ease) infinite; }
+  .d-hero-txt { min-width: 0; }
+  .d-status { font-size: 14px; font-weight: 600; color: var(--tone); letter-spacing: 0.01em; }
+  .d-status-sub { font-size: 11.5px; color: var(--ink-dim); margin-top: 3px; line-height: 1.5; }
+
+  /* chips: what kind of thing this node is */
+  .d-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+  .chip {
+    font-size: 11px; padding: 3px 10px; border-radius: 5px;
+    border: 1px solid var(--hairline); color: var(--ink-dim); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .chip .k { color: var(--ink); font-weight: 600; }
+  .chip.type { border-color: color-mix(in oklch, var(--ink-dim) 55%, var(--hairline)); }
+  .chip.adopt { color: var(--adopted); border-color: color-mix(in oklch, var(--adopted) 42%, var(--hairline)); }
+  .chip.nb-ok { color: var(--frontier); border-color: color-mix(in oklch, var(--frontier) 42%, var(--hairline)); }
+  .chip.nb-bad { color: oklch(0.7 0.16 25); border-color: color-mix(in oklch, oklch(0.7 0.16 25) 42%, var(--hairline)); }
+
+  /* facts: structured metadata grid, not a run-on dotted line */
+  .d-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px 10px; margin: 0; }
+  .d-facts > div { min-width: 0; }
+  .d-facts dt { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--ink-dim); margin-bottom: 3px; }
+  .d-facts dd { font-size: 12px; color: var(--ink); margin: 0; overflow-wrap: anywhere; }
+
+  /* sections split by hairlines + a phosphor marker so each reads as its own beat */
+  .d-sec { margin: 0; padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--hairline); }
+  .d-sec > h3 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--ink-dim); margin: 0 0 10px; font-weight: 600;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .d-sec > h3::before {
+    content: ""; width: 5px; height: 5px; border-radius: 1px; flex: none;
+    background: var(--frontier); box-shadow: 0 0 6px color-mix(in oklch, var(--frontier) 60%, transparent);
+  }
+  .d-sec.empty > h3::before { background: var(--dead); box-shadow: none; }
   .md { font-size: 12.5px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
   .md :first-child { margin-top: 0; }
   .md :last-child { margin-bottom: 0; }
@@ -1221,30 +1265,68 @@ function selectNode(id) {
   centerOn(id, true);
   fetch("/api/node/" + encodeURIComponent(id)).then(r => r.json()).then(renderDrawer).catch(() => {});
 }
+// a node file usually opens with its own "# Goal" / "# Conclusion" heading; the drawer
+// already labels the section, so drop that leading heading to avoid the doubled title.
+function stripLeadingHeading(src, title) {
+  if (!src) return src;
+  const lines = src.replace(/\\r/g, "").split("\\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  const h = lines[i] && lines[i].match(/^#{1,6}\\s+(.*)$/);
+  if (h && h[1].trim().toLowerCase() === title.toLowerCase()) { lines.splice(i, 1); return lines.join("\\n"); }
+  return src;
+}
+// human-readable state: the drawer says what the status *means*, not just its name
+function statusInfo(m) {
+  const k = statusKind(m);
+  if (!m.parent_id) return { k, word: "objective", desc: "root of the exploration — the north-star question" };
+  const map = {
+    working:   { word: "working",   desc: "in progress — not yet concluded" },
+    promising: { word: "promising", desc: "resolved, worth expanding — on the frontier" },
+    open:      { word: "open",      desc: "created, not yet resolved — on the frontier" },
+    answered:  { word: "answered",  desc: "resolved — its local question is settled" },
+    dead:      { word: "dead-end",  desc: "pruned — resolved, not worth expanding" },
+  };
+  return Object.assign({ k: k }, map[k] || map.open);
+}
 function renderDrawer(d) {
   if (!d) return;
   const m = d.meta;
-  const kind = statusKind(m);
-  const nb = m.notebook_ok === true ? '<span class="badge nb-ok">notebook ✓</span>'
-           : m.notebook_ok === false ? '<span class="badge nb-bad">notebook ✗</span>' : "";
-  const adopted = m.created_by === "adopt" ? '<span class="badge adopt">adopted</span>' : "";
+  const si = statusInfo(m);
+  const nb = m.notebook_ok === true ? '<span class="chip nb-ok">◇ notebook clean</span>'
+           : m.notebook_ok === false ? '<span class="chip nb-bad">◈ notebook failed</span>' : "";
+  const adopted = m.created_by === "adopt" ? '<span class="chip adopt">◌ adopted</span>' : "";
+  const hasConc = !!(d.conclusion && d.conclusion.trim());
   const files = (d.files || []).map(f =>
     '<a href="/api/file?id=' + encodeURIComponent(m.id) + "&name=" + encodeURIComponent(f) + '" target="_blank" rel="noopener">' + esc(f) + "</a>"
   ).join("");
   els.drawer.innerHTML =
     '<div class="d-pad">' +
-      '<div class="d-top">' +
-        '<span class="glyph k-' + kind + '">' + glyphChar(m) + "</span>" +
-        '<span class="d-id">' + esc(m.id) + "</span>" +
+      '<div class="d-titlebar">' +
+        '<div class="d-title">' +
+          '<div class="d-slug">' + esc(shortId(m.id)) + "</div>" +
+          '<div class="d-fullid">' + esc(m.id) + "</div>" +
+        "</div>" +
         '<button class="d-close" id="d-close" aria-label="close" title="Close (Esc)">✕</button>' +
       "</div>" +
-      '<div class="d-badges">' +
-        '<span class="badge status ' + kind + '">' + esc(m.status) + "</span>" +
-        '<span class="badge">' + esc(m.type) + "</span>" + nb + adopted +
+      '<div class="d-hero k-' + si.k + '">' +
+        '<span class="d-glyph">' + glyphChar(m) + "</span>" +
+        '<div class="d-hero-txt">' +
+          '<div class="d-status">' + esc(si.word) + "</div>" +
+          '<div class="d-status-sub">' + esc(si.desc) + "</div>" +
+        "</div>" +
       "</div>" +
-      '<div class="d-meta">seq ' + esc(m.seq) + " · by " + esc(m.created_by) + (m.ts ? " · updated " + esc(agoLabel(m.ts)) : "") + "</div>" +
-      '<div class="d-sec"><h3>Goal</h3><div class="md">' + (md(d.goal) || '<span class="none">no goal.md</span>') + "</div></div>" +
-      '<div class="d-sec"><h3>Conclusion</h3><div class="md">' + (md(d.conclusion) || '<span class="none">— not concluded yet —</span>') + "</div></div>" +
+      '<div class="d-chips">' +
+        '<span class="chip type">type <span class="k">' + esc(m.type) + "</span></span>" +
+        adopted + nb +
+      "</div>" +
+      '<dl class="d-facts">' +
+        '<div><dt>seq</dt><dd>' + esc(m.seq) + "</dd></div>" +
+        '<div><dt>created by</dt><dd>' + esc(m.created_by) + "</dd></div>" +
+        '<div><dt>updated</dt><dd>' + esc(m.ts ? agoLabel(m.ts) : "—") + "</dd></div>" +
+      "</dl>" +
+      '<div class="d-sec"><h3>Goal</h3><div class="md">' + (md(stripLeadingHeading(d.goal, "goal")) || '<span class="none">no goal.md</span>') + "</div></div>" +
+      '<div class="d-sec' + (hasConc ? "" : " empty") + '"><h3>Conclusion</h3><div class="md">' + (md(stripLeadingHeading(d.conclusion, "conclusion")) || '<span class="none">— not concluded yet —</span>') + "</div></div>" +
       (files ? '<div class="d-sec"><h3>Files</h3><div class="files">' + files + "</div></div>" : "") +
     "</div>";
   document.getElementById("d-close").addEventListener("click", () => els.drawer.close());
