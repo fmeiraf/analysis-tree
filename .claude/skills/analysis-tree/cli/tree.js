@@ -849,6 +849,7 @@ const DASHBOARD_HTML = `<!doctype html>
   </div>
 
   <div class="hud controls">
+    <button id="c-orient" title="Toggle vertical / horizontal (O)" aria-label="toggle orientation">⇅</button>
     <button id="c-fit" title="Zoom to fit (F)">fit</button>
     <button id="c-front" title="Recenter on frontier (C)">◉</button>
     <button id="c-in" title="Zoom in (+)" aria-label="zoom in">+</button>
@@ -872,16 +873,26 @@ const els = {
   drawer: document.getElementById("drawer"),
 };
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const LEVEL_GAP = 96;   // vertical distance between tree depths
-const LEAF_GAP = 158;   // horizontal distance between adjacent leaves
 const GLYPH_R = 11;     // glyph radius, used to inset connectors
 const ZOOM_LABEL_THRESHOLD = 1.35;
+// per-orientation geometry. DEPTH = along the growth axis, BREADTH = sibling spread,
+// MAXLABEL = chars a label may show before it's truncated (full text lives in <title> + drawer).
+const GEO = {
+  vertical:   { DEPTH: 96,  BREADTH: 170, MAXLABEL: 20 },
+  horizontal: { DEPTH: 230, BREADTH: 52,  MAXLABEL: 30 },
+};
 
+function loadOrient() {
+  // horizontal is the default; a saved explicit choice wins.
+  try { return localStorage.getItem("at-orient") === "vertical" ? "vertical" : "horizontal"; }
+  catch (e) { return "horizontal"; }
+}
 const state = {
   nodes: [],
   layout: { byId: new Map(), kids: new Map(), roots: [], pos: new Map() },
   known: new Set(),
   selected: null,
+  orient: loadOrient(),
   view: { tx: 0, ty: 0, s: 1 },
   lastEvent: 0,
   firstLoad: true,
@@ -922,9 +933,10 @@ function glyphChar(n) {
 }
 function isFrontier(n) { return n.status === "open" || n.status === "promising"; }
 
-/* ---------- layout: vertical tidy tree (top-down) ---------- */
-// Leaves are packed left-to-right into equal slots; each parent centers over
-// its children. Subtrees occupy contiguous slot ranges, so nothing overlaps.
+/* ---------- layout: tidy tree, vertical or horizontal ---------- */
+// Leaves get sequential integer slots along the breadth axis; each parent
+// centers over its children. Subtrees occupy contiguous slot ranges, so nothing
+// overlaps. Orientation maps (depth, slot) onto (x, y).
 function computeLayout(nodes) {
   const byId = new Map(nodes.map(n => [n.id, n]));
   const kids = new Map();
@@ -941,51 +953,55 @@ function computeLayout(nodes) {
   roots.sort((a, b) => a.seq - b.seq);
 
   const depth = new Map();
-  const xOf = new Map();
+  const slotOf = new Map();
   const seen = new Set();
   let cursor = 0;
   function walk(n, d) {
-    if (seen.has(n.id)) return xOf.get(n.id) || 0; // guard against cycles
+    if (seen.has(n.id)) return slotOf.get(n.id) || 0; // guard against cycles
     seen.add(n.id);
     depth.set(n.id, d);
     const ch = kids.get(n.id) || [];
-    let x;
+    let slot;
     if (ch.length === 0) {
-      x = cursor * LEAF_GAP;
-      cursor++;
+      slot = cursor++;
     } else {
-      const xs = ch.map(c => walk(c, d + 1));
-      x = (xs[0] + xs[xs.length - 1]) / 2;
+      const ss = ch.map(c => walk(c, d + 1));
+      slot = (ss[0] + ss[ss.length - 1]) / 2;
     }
-    xOf.set(n.id, x);
-    return x;
+    slotOf.set(n.id, slot);
+    return slot;
   }
   for (const r of roots) { walk(r, 0); cursor++; } // gap between separate roots
 
+  const vertical = state.orient !== "horizontal";
+  const g = vertical ? GEO.vertical : GEO.horizontal;
   const pos = new Map();
   for (const n of nodes) {
     const d = depth.get(n.id) || 0;
-    pos.set(n.id, { x: xOf.get(n.id) || 0, y: d * LEVEL_GAP, d });
+    const b = (slotOf.get(n.id) || 0) * g.BREADTH;
+    pos.set(n.id, vertical ? { x: b, y: d * g.DEPTH, d } : { x: d * g.DEPTH, y: b, d });
   }
   return { byId, kids, roots, pos };
 }
 
-// Orthogonal flowchart connector: down from the parent, a rounded elbow at the
-// midline, across to the child's column, then down into the child.
+// Orthogonal flowchart connector along the current growth axis: out from the
+// parent, a rounded elbow at the midline, across to the child's lane, then in.
 function edgePath(p, c) {
-  const py = p.y + GLYPH_R, cy = c.y - GLYPH_R;
-  const midY = (py + cy) / 2;
-  if (Math.abs(c.x - p.x) < 0.5) {
-    return "M" + p.x.toFixed(1) + "," + py.toFixed(1) + " L" + c.x.toFixed(1) + "," + cy.toFixed(1);
-  }
-  const dir = c.x > p.x ? 1 : -1;
-  const r = Math.min(12, Math.abs(c.x - p.x) / 2, Math.abs(midY - py));
-  return "M" + p.x.toFixed(1) + "," + py.toFixed(1) +
-    " L" + p.x.toFixed(1) + "," + (midY - r).toFixed(1) +
-    " Q" + p.x.toFixed(1) + "," + midY.toFixed(1) + " " + (p.x + dir * r).toFixed(1) + "," + midY.toFixed(1) +
-    " L" + (c.x - dir * r).toFixed(1) + "," + midY.toFixed(1) +
-    " Q" + c.x.toFixed(1) + "," + midY.toFixed(1) + " " + c.x.toFixed(1) + "," + (midY + r).toFixed(1) +
-    " L" + c.x.toFixed(1) + "," + cy.toFixed(1);
+  const vertical = state.orient !== "horizontal";
+  // a/b = along growth axis / across; map back to x/y at the end
+  const pa = vertical ? p.y : p.x, pb = vertical ? p.x : p.y;
+  const ca = vertical ? c.y : c.x, cb = vertical ? c.x : c.y;
+  const a0 = pa + GLYPH_R, a1 = ca - GLYPH_R, mid = (a0 + a1) / 2;
+  const XY = (a, b) => (vertical ? b.toFixed(1) + "," + a.toFixed(1) : a.toFixed(1) + "," + b.toFixed(1));
+  if (Math.abs(cb - pb) < 0.5) return "M" + XY(a0, pb) + " L" + XY(a1, cb);
+  const dir = cb > pb ? 1 : -1;
+  const r = Math.min(12, Math.abs(cb - pb) / 2, Math.abs(mid - a0));
+  return "M" + XY(a0, pb) +
+    " L" + XY(mid - r, pb) +
+    " Q" + XY(mid, pb) + " " + XY(mid, pb + dir * r) +
+    " L" + XY(mid, cb - dir * r) +
+    " Q" + XY(mid, cb) + " " + XY(mid + r, cb) +
+    " L" + XY(a1, cb);
 }
 
 /* ---------- render ---------- */
@@ -1002,6 +1018,12 @@ function render() {
   }
   els.edges.innerHTML = edges;
 
+  const vertical = state.orient !== "horizontal";
+  const maxLabel = (vertical ? GEO.vertical : GEO.horizontal).MAXLABEL;
+  // vertical: label centered under the glyph; horizontal: to the right, on the baseline
+  const lx = vertical ? 0 : 15, ly = vertical ? 16 : 0;
+  const lanchor = vertical ? "middle" : "start", lbase = vertical ? "hanging" : "central";
+
   let out = "";
   for (const n of state.nodes) {
     const pt = L.pos.get(n.id);
@@ -1015,13 +1037,16 @@ function render() {
     if (n.created_by === "adopt") cls.push("adopt");
     if (state.selected === n.id) cls.push("sel");
     if (!state.known.has(n.id) && !state.firstLoad) cls.push("enter");
+    const full = shortId(n.id);
+    const label = full.length > maxLabel ? full.slice(0, maxLabel - 1) + "…" : full;
     out +=
-      '<g class="' + cls.join(" ") + '" data-id="' + esc(n.id) + '" transform="translate(' + pt.x.toFixed(1) + " " + pt.y.toFixed(1) + ')" tabindex="0" role="treeitem" aria-label="' + esc(shortId(n.id) + ": " + n.goal + " (" + kind + ")") + '">' +
+      '<g class="' + cls.join(" ") + '" data-id="' + esc(n.id) + '" transform="translate(' + pt.x.toFixed(1) + " " + pt.y.toFixed(1) + ')" tabindex="0" role="treeitem" aria-label="' + esc(full + ": " + n.goal + " (" + kind + ")") + '">' +
+      "<title>" + esc(full + " — " + n.goal) + "</title>" +
       (n.created_by === "adopt" ? '<circle class="adopt-ring" r="13" vector-effect="non-scaling-stroke"/>' : "") +
       '<circle class="sel-ring" r="14" vector-effect="non-scaling-stroke"/>' +
       '<circle class="hit" r="15"/>' +
       '<text class="glyph" text-anchor="middle" dominant-baseline="central">' + glyphChar(n) + "</text>" +
-      '<text class="label" x="0" y="16" text-anchor="middle" dominant-baseline="hanging">' + esc(shortId(n.id)) + "</text>" +
+      '<text class="label" x="' + lx + '" y="' + ly + '" text-anchor="' + lanchor + '" dominant-baseline="' + lbase + '">' + esc(label) + "</text>" +
       "</g>";
   }
   els.nodes.innerHTML = out;
@@ -1128,6 +1153,18 @@ els.nodes.addEventListener("keydown", e => {
   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectNode(g.getAttribute("data-id")); }
 });
 
+function setOrient(o) {
+  state.orient = o;
+  try { localStorage.setItem("at-orient", o); } catch (e) {}
+  document.getElementById("c-orient").textContent = o === "horizontal" ? "⇄" : "⇅";
+  state.layout = computeLayout(state.nodes);
+  render();
+  fitView(true);
+}
+function toggleOrient() { setOrient(state.orient === "horizontal" ? "vertical" : "horizontal"); }
+document.getElementById("c-orient").textContent = state.orient === "horizontal" ? "⇄" : "⇅";
+
+document.getElementById("c-orient").addEventListener("click", toggleOrient);
 document.getElementById("c-fit").addEventListener("click", () => fitView(true));
 document.getElementById("c-front").addEventListener("click", () => { const n = newestFrontier(); if (n) centerOn(n.id, true); });
 document.getElementById("c-in").addEventListener("click", () => { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25); });
@@ -1137,6 +1174,7 @@ window.addEventListener("keydown", e => {
   if (e.target.closest("dialog")) return;
   if (e.key === "f" || e.key === "F") fitView(true);
   else if (e.key === "c" || e.key === "C") { const n = newestFrontier(); if (n) centerOn(n.id, true); }
+  else if (e.key === "o" || e.key === "O") toggleOrient();
   else if (e.key === "+" || e.key === "=") { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.25); }
   else if (e.key === "-" || e.key === "_") { const r = viewport(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 0.8); }
 });
