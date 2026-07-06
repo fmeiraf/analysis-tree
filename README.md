@@ -73,5 +73,3 @@ node tree.js                 # all commands
 - `nodes/<id>/` — each node's **content** (goal, notebook, conclusion).
 - `node.md` — the **configurable contract** for what each node type must contain; the master
   validates against it before a node counts as done.
-
-Full design and rationale: [`plans/analysis-tree-prd.md`](plans/analysis-tree-prd.md).

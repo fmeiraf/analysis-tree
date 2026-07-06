@@ -5,3 +5,6 @@
 
 # Machine-local Claude settings (hooks, permissions)
 .claude/settings.local.json
+
+# Local planning docs / PRDs
+plans/
