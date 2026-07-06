@@ -23,7 +23,7 @@ it (single-writer), so parallel node subagents can never corrupt or race it.
 | `created_by` | string | `master` or `auto` (which mode created the node) |
 | `notebook_ok` | bool \| null | did the notebook pass clean; `null` if no notebook |
 | `deleted` | bool? | tombstone flag; present only on deletion lines |
-| `ts` | string? | optional wall-clock stamp; omitted by default |
+| `ts` | string? | ISO wall-clock stamp, auto-set on every appended line (override with `--ts` for deterministic tests); powers "updated N ago" in the live dashboard |
 
 ## Status meanings (the frontier)
 

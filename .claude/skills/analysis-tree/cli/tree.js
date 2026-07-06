@@ -49,6 +49,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
+const http = __importStar(require("node:http"));
 const STATUSES = ["open", "promising", "dead-end", "answered"];
 // ---------- workspace resolution ----------
 function resolveWs(args) {
@@ -95,7 +96,14 @@ function remount(ws, opts = {}) {
     }
     return latest;
 }
+function nowTs() {
+    return new Date().toISOString();
+}
 function appendLine(ws, line) {
+    // Every appended line is stamped with wall-clock time unless the caller supplied one
+    // explicitly (e.g. --ts for deterministic tests). Powers "updated N ago" in the dashboard.
+    if (!line.ts)
+        line.ts = nowTs();
     fs.appendFileSync(P.jsonl(ws), JSON.stringify(line) + "\n");
 }
 /** Merge current state of an id with a patch, and append the resulting full line. */
@@ -104,6 +112,9 @@ function mutate(ws, id, patch) {
     if (!cur)
         throw new Error(`No such node: ${id}`);
     const next = { ...cur, ...patch };
+    // A mutation is a new event: refresh its stamp unless the patch pinned one explicitly.
+    if (!("ts" in patch))
+        delete next.ts;
     appendLine(ws, next);
     return next;
 }
@@ -494,6 +505,369 @@ function cmdCheckNotebook(ws, positional, flags) {
     const nCode = cells.filter((c) => c.cell_type === "code").length;
     process.stdout.write(`clean: ${nCode} code cell(s) executed, zero error outputs\n`);
 }
+// ---------- serve: live html dashboard ----------
+/** Flat, sorted, live-state node list for the dashboard API. */
+function treeSnapshot(ws) {
+    return [...remount(ws).values()].sort((a, b) => a.seq - b.seq);
+}
+function readIfExists(p) {
+    return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
+}
+/** Node folder content for the detail panel. */
+function nodeDetail(ws, id) {
+    const all = remount(ws, { includeDeleted: true });
+    const meta = all.get(id);
+    if (!meta)
+        return null;
+    const dir = P.nodeDir(ws, id);
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+    return {
+        meta,
+        files,
+        goal: readIfExists(path.join(dir, "goal.md")),
+        conclusion: readIfExists(path.join(dir, "conclusion.md")),
+    };
+}
+// Self-contained dashboard page (no external assets — inlined so the copied-in tree.js
+// serves it offline). Client JS avoids template literals to keep this a clean TS literal.
+const DASHBOARD_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>analysis-tree · live</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#161a21; --panel2:#1b212b; --border:#252c38;
+    --fg:#e6e9ef; --muted:#8a94a6; --accent:#5b9dff;
+    --open:#8a94a6; --working:#f0b429; --promising:#3fb950; --answered:#5b9dff; --dead:#5a6273;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f6f7f9; --panel:#ffffff; --panel2:#f0f2f5; --border:#e2e6ec;
+      --fg:#1c2029; --muted:#6b7383; --accent:#2f6fd6;
+      --open:#6b7383; --working:#b9820a; --promising:#1a7f37; --answered:#2f6fd6; --dead:#9aa3b2;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px;
+           border-bottom:1px solid var(--border); background:var(--panel); }
+  header h1 { font-size:14px; font-weight:600; margin:0; letter-spacing:.02em; }
+  header .obj { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis;
+                white-space:nowrap; flex:1; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--dead); flex:none; }
+  .dot.live { background:var(--promising); box-shadow:0 0 0 3px color-mix(in srgb,var(--promising) 25%,transparent); }
+  main { flex:1; display:flex; min-height:0; }
+  #tree { flex:1; overflow:auto; padding:14px 10px; }
+  #detail { width:42%; max-width:560px; border-left:1px solid var(--border); background:var(--panel);
+            overflow:auto; padding:0; }
+  .row { display:flex; align-items:baseline; gap:7px; padding:3px 8px; border-radius:6px;
+         cursor:pointer; white-space:nowrap; }
+  .row:hover { background:var(--panel2); }
+  .row.sel { background:color-mix(in srgb,var(--accent) 18%,transparent); }
+  .row.frontier { }
+  .chev { width:12px; color:var(--muted); flex:none; cursor:pointer; user-select:none; font-size:11px; }
+  .glyph { flex:none; width:14px; text-align:center; font-size:13px; }
+  .s-open .glyph{color:var(--open);} .s-working .glyph{color:var(--working);}
+  .s-promising .glyph{color:var(--promising);} .s-answered .glyph{color:var(--answered);}
+  .s-dead-end .glyph{color:var(--dead);}
+  .s-working .glyph{ animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  .nid { color:var(--muted); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .goal { overflow:hidden; text-overflow:ellipsis; }
+  .s-dead-end .goal { text-decoration:line-through; color:var(--muted); }
+  .frontier .goal { font-weight:600; }
+  .ago { color:var(--muted); font-size:11px; margin-left:6px; flex:none; }
+  .legend { color:var(--muted); font-size:12px; padding:8px 16px; border-top:1px solid var(--border);
+            background:var(--panel); display:flex; gap:16px; flex-wrap:wrap; }
+  .legend b { font-weight:400; }
+  .dpad { padding:16px 18px; }
+  .dhead { display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+  .dhead .nid { font-size:13px; }
+  .badge { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--border); color:var(--muted); }
+  .badge.ok { color:var(--promising); border-color:color-mix(in srgb,var(--promising) 40%,var(--border)); }
+  .badge.bad { color:#f85149; border-color:color-mix(in srgb,#f85149 40%,var(--border)); }
+  .dmeta { color:var(--muted); font-size:12px; margin:6px 0 14px; }
+  .dsec { margin:16px 0; }
+  .dsec h3 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+             margin:0 0 6px; font-weight:600; }
+  .md { font-size:13.5px; }
+  .md h1,.md h2,.md h3 { font-size:14px; margin:12px 0 4px; }
+  .md code { background:var(--panel2); padding:1px 5px; border-radius:4px;
+             font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .md pre { background:var(--panel2); padding:10px 12px; border-radius:8px; overflow:auto; }
+  .md pre code { background:none; padding:0; }
+  .md ul { margin:4px 0; padding-left:20px; }
+  .md a { color:var(--accent); }
+  .files a { color:var(--accent); text-decoration:none; font-family:ui-monospace,Menlo,monospace; font-size:12px; }
+  .files span { margin-right:12px; }
+  .empty { color:var(--muted); padding:40px; text-align:center; }
+  .placeholder { color:var(--muted); padding:40px 20px; text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>analysis-tree</h1>
+  <span class="obj" id="obj"></span>
+  <span class="ago" id="stamp"></span>
+</header>
+<main>
+  <div id="tree"><div class="empty">connecting…</div></div>
+  <aside id="detail"><div class="placeholder">Select a node to see its goal &amp; conclusion.</div></aside>
+</main>
+<div class="legend">
+  <b><span style="color:var(--working)">◐</span> working</b>
+  <b><span style="color:var(--open)">○</span> open</b>
+  <b><span style="color:var(--promising)">●</span> promising</b>
+  <b><span style="color:var(--answered)">✓</span> answered</b>
+  <b><span style="color:var(--dead)">✗</span> dead-end</b>
+</div>
+<script>
+var state = { nodes: [], byId: {}, kids: {}, selected: null, collapsed: {}, lastEvent: 0 };
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+function agoLabel(ts){
+  if(!ts) return '';
+  var d = Date.now() - Date.parse(ts);
+  if(isNaN(d)) return '';
+  var s = Math.round(d/1000);
+  if(s < 5) return 'just now';
+  if(s < 60) return s + 's ago';
+  var m = Math.round(s/60); if(m < 60) return m + 'm ago';
+  var h = Math.round(m/60); if(h < 24) return h + 'h ago';
+  return Math.round(h/24) + 'd ago';
+}
+
+function glyph(n){
+  if(n.status === 'promising') return '●';
+  if(n.status === 'answered') return '✓';
+  if(n.status === 'dead-end') return '✗';
+  if(n.status === 'open' && !n.conclusion) return '◐';
+  return '○';
+}
+function statusClass(n){
+  if(n.status === 'open' && !n.conclusion) return 's-working';
+  return 's-' + n.status;
+}
+function isFrontier(n){ return n.status === 'open' || n.status === 'promising'; }
+
+function index(){
+  state.byId = {}; state.kids = {};
+  state.nodes.forEach(function(n){ state.byId[n.id] = n; });
+  state.nodes.forEach(function(n){
+    var p = n.parent_id;
+    if(p){ (state.kids[p] = state.kids[p] || []).push(n); }
+  });
+}
+
+function renderTree(){
+  index();
+  var roots = state.nodes.filter(function(n){ return !n.parent_id; });
+  var host = document.getElementById('tree');
+  if(state.nodes.length === 0){ host.innerHTML = '<div class="empty">Empty tree — waiting for the first node…</div>'; return; }
+  var html = [];
+  roots.forEach(function(r){ walk(r, 0, html); });
+  host.innerHTML = html.join('');
+}
+
+function walk(n, depth, html){
+  var kids = state.kids[n.id] || [];
+  var collapsed = !!state.collapsed[n.id];
+  var chev = kids.length ? (collapsed ? '▸' : '▾') : '';
+  var cls = 'row ' + statusClass(n) + (isFrontier(n) ? ' frontier' : '') + (state.selected === n.id ? ' sel' : '');
+  html.push(
+    '<div class="' + cls + '" data-id="' + esc(n.id) + '" style="padding-left:' + (8 + depth*18) + 'px">' +
+      '<span class="chev" data-chev="' + esc(n.id) + '">' + chev + '</span>' +
+      '<span class="glyph">' + glyph(n) + '</span>' +
+      '<span class="nid">' + esc(n.id) + '</span>' +
+      '<span class="goal">' + esc(n.goal) + '</span>' +
+      '<span class="ago" data-ts="' + esc(n.ts || '') + '">' + agoLabel(n.ts) + '</span>' +
+    '</div>'
+  );
+  if(!collapsed) kids.forEach(function(k){ walk(k, depth+1, html); });
+}
+
+// --- tiny markdown renderer (headings, bold, italic, code, lists, links, paras) ---
+function mdInline(s){
+  s = esc(s);
+  s = s.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
+  s = s.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+  s = s.replace(/\\*([^*]+)\\*/g, '<em>$1</em>');
+  s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+function md(src){
+  if(!src) return '';
+  var lines = src.replace(/\\r/g,'').split('\\n');
+  var out = [], i = 0, inCode = false, code = [], list = false;
+  function closeList(){ if(list){ out.push('</ul>'); list = false; } }
+  for(i=0;i<lines.length;i++){
+    var ln = lines[i];
+    if(/^\`\`\`/.test(ln)){
+      if(inCode){ out.push('<pre><code>' + esc(code.join('\\n')) + '</code></pre>'); code=[]; inCode=false; }
+      else { closeList(); inCode = true; }
+      continue;
+    }
+    if(inCode){ code.push(ln); continue; }
+    var h = ln.match(/^(#{1,6})\\s+(.*)$/);
+    if(h){ closeList(); out.push('<h3>' + mdInline(h[2]) + '</h3>'); continue; }
+    var li = ln.match(/^\\s*[-*]\\s+(.*)$/);
+    if(li){ if(!list){ out.push('<ul>'); list = true; } out.push('<li>' + mdInline(li[1]) + '</li>'); continue; }
+    if(ln.trim() === ''){ closeList(); continue; }
+    closeList(); out.push('<p>' + mdInline(ln) + '</p>');
+  }
+  if(inCode) out.push('<pre><code>' + esc(code.join('\\n')) + '</code></pre>');
+  closeList();
+  return out.join('');
+}
+
+function renderDetail(d){
+  var host = document.getElementById('detail');
+  if(!d){ host.innerHTML = '<div class="placeholder">Node not found.</div>'; return; }
+  var m = d.meta;
+  var nbBadge = '';
+  if(m.notebook_ok === true) nbBadge = '<span class="badge ok">notebook ✓</span>';
+  else if(m.notebook_ok === false) nbBadge = '<span class="badge bad">notebook ✗</span>';
+  var files = (d.files||[]).map(function(f){
+    return '<span><a href="/api/file?id=' + encodeURIComponent(m.id) + '&name=' + encodeURIComponent(f) +
+           '" target="_blank" rel="noopener">' + esc(f) + '</a></span>';
+  }).join('');
+  host.innerHTML =
+    '<div class="dpad">' +
+      '<div class="dhead"><span class="glyph ' + statusClass(m) + '">' + glyph(m) + '</span>' +
+        '<span class="nid">' + esc(m.id) + '</span>' +
+        '<span class="badge">' + esc(m.status) + '</span>' + nbBadge + '</div>' +
+      '<div class="dmeta">type ' + esc(m.type) + ' · by ' + esc(m.created_by) +
+        (m.ts ? ' · updated ' + esc(agoLabel(m.ts)) : '') + '</div>' +
+      '<div class="dsec"><h3>Goal</h3><div class="md">' + (md(d.goal) || '<p class="placeholder">no goal.md</p>') + '</div></div>' +
+      '<div class="dsec"><h3>Conclusion</h3><div class="md">' + (md(d.conclusion) || '<p style="color:var(--muted)">— not concluded yet —</p>') + '</div></div>' +
+      (files ? '<div class="dsec"><h3>Files</h3><div class="files">' + files + '</div></div>' : '') +
+    '</div>';
+}
+
+function select(id){
+  state.selected = id;
+  renderTree();
+  fetch('/api/node/' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(renderDetail);
+}
+
+document.getElementById('tree').addEventListener('click', function(e){
+  var chev = e.target.getAttribute('data-chev');
+  if(chev){ state.collapsed[chev] = !state.collapsed[chev]; renderTree(); return; }
+  var row = e.target.closest('.row');
+  if(row){ select(row.getAttribute('data-id')); }
+});
+
+function refreshAgos(){
+  document.querySelectorAll('.ago[data-ts]').forEach(function(el){
+    el.textContent = agoLabel(el.getAttribute('data-ts'));
+  });
+  var st = document.getElementById('stamp');
+  if(state.lastEvent) st.textContent = 'updated ' + agoLabel(new Date(state.lastEvent).toISOString());
+}
+setInterval(refreshAgos, 5000);
+
+fetch('/api/objective').then(function(r){ return r.text(); }).then(function(t){
+  var first = (t.split('\\n').find(function(l){ return l.trim() && !l.trim().startsWith('#'); }) || '').trim();
+  document.getElementById('obj').textContent = first || t.trim().split('\\n')[0] || '';
+});
+
+var es = new EventSource('/events');
+es.addEventListener('tree', function(e){
+  state.nodes = JSON.parse(e.data);
+  state.lastEvent = Date.now();
+  renderTree();
+  if(state.selected) select(state.selected);
+  document.getElementById('dot').classList.add('live');
+});
+es.onerror = function(){ document.getElementById('dot').classList.remove('live'); };
+</script>
+</body>
+</html>`;
+function send(res, code, type, body) {
+    res.writeHead(code, { "Content-Type": type, "Cache-Control": "no-cache" });
+    res.end(body);
+}
+function cmdServe(ws, flags) {
+    if (!fs.existsSync(P.jsonl(ws)))
+        die("no tree.jsonl in workspace — run init first");
+    const port = Number(flags.port) || 4173;
+    const clients = new Set();
+    const pushTree = () => {
+        const data = JSON.stringify(treeSnapshot(ws));
+        for (const res of clients)
+            res.write(`event: tree\ndata: ${data}\n\n`);
+    };
+    // Watch the append-only log; every mutation (add/set/status/…) lands as a new line and
+    // fans out to every connected browser. Debounced so a burst of writes coalesces.
+    let timer = null;
+    const onChange = () => {
+        if (timer)
+            clearTimeout(timer);
+        timer = setTimeout(pushTree, 100);
+    };
+    try {
+        fs.watch(P.jsonl(ws), onChange);
+    }
+    catch {
+        fs.watchFile(P.jsonl(ws), { interval: 500 }, onChange); // fallback for platforms without fs.watch
+    }
+    const server = http.createServer((req, res) => {
+        const url = new URL(req.url || "/", `http://localhost:${port}`);
+        const p = url.pathname;
+        try {
+            if (p === "/")
+                return send(res, 200, "text/html; charset=utf-8", DASHBOARD_HTML);
+            if (p === "/api/tree")
+                return send(res, 200, "application/json", JSON.stringify(treeSnapshot(ws)));
+            if (p === "/api/objective")
+                return send(res, 200, "text/plain; charset=utf-8", readIfExists(P.objective(ws)));
+            if (p.startsWith("/api/node/")) {
+                const d = nodeDetail(ws, decodeURIComponent(p.slice("/api/node/".length)));
+                return d ? send(res, 200, "application/json", JSON.stringify(d)) : send(res, 404, "application/json", "null");
+            }
+            if (p === "/api/file") {
+                const id = url.searchParams.get("id") || "";
+                const name = url.searchParams.get("name") || "";
+                if (!/^[\w.-]+$/.test(id) || !/^[\w.-]+$/.test(name))
+                    return send(res, 400, "text/plain", "bad path");
+                const fp = path.join(P.nodeDir(ws, id), name);
+                if (!fs.existsSync(fp))
+                    return send(res, 404, "text/plain", "not found");
+                const isNb = name.endsWith(".ipynb");
+                return send(res, 200, isNb ? "application/json" : "text/plain; charset=utf-8", fs.readFileSync(fp));
+            }
+            if (p === "/events") {
+                res.writeHead(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    Connection: "keep-alive",
+                });
+                res.write(`event: tree\ndata: ${JSON.stringify(treeSnapshot(ws))}\n\n`);
+                clients.add(res);
+                req.on("close", () => clients.delete(res));
+                return;
+            }
+            send(res, 404, "text/plain", "not found");
+        }
+        catch (e) {
+            send(res, 500, "text/plain", e && e.message ? e.message : String(e));
+        }
+    });
+    server.on("error", (e) => {
+        if (e.code === "EADDRINUSE")
+            die(`port ${port} is in use — pass --port <n>`);
+        die(e.message || String(e));
+    });
+    server.listen(port, () => {
+        process.stdout.write(`analysis-tree dashboard live at http://localhost:${port}  (Ctrl-C to stop)\n`);
+    });
+}
 // ---------- dispatch ----------
 function main() {
     const [, , verb, ...rest] = process.argv;
@@ -525,6 +899,8 @@ function main() {
                 return cmdFind(ws, positional);
             case "check-notebook":
                 return cmdCheckNotebook(ws, positional, flags);
+            case "serve":
+                return cmdServe(ws, flags);
             default:
                 process.stdout.write([
                     "analysis-tree CLI",
@@ -542,6 +918,7 @@ function main() {
                     "  children <id>",
                     "  find <query>",
                     "  check-notebook <id> [--file <name>]",
+                    "  serve [--port <n>]            # live html dashboard (real-time via SSE)",
                     "",
                     `  statuses: ${STATUSES.join(" | ")}`,
                 ].join("\n") + "\n");

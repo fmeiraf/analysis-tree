@@ -72,6 +72,16 @@ Editing the shape of the tree as understanding shifts is normal: `node tree.js r
 <new_parent>` to move a branch, `node tree.js delete <id>` to prune (blocks a non-leaf
 unless you pass `--cascade` or `--reparent`; archives the folder unless `--purge`).
 
+### Live dashboard
+
+`node tree.js serve [--port <n>]` starts a local HTML dashboard (default
+`http://localhost:4173`) that renders the tree as an indented, collapsible view and updates
+**in real time** as you write to `tree.jsonl` — a node appears as pulsing "working" the moment
+you `add` it, then flips to its status with its conclusion once you commit. Clicking a node
+opens its goal, conclusion, and notebook status. Offer to launch it when the user wants to
+watch the exploration unfold (especially in auto mode); it's a read-only viewer over the log,
+so leave it running in the background while you drive the loop. It runs until stopped (Ctrl-C).
+
 ## Mode: step (default) vs auto
 
 Ask the user which mode, or infer from their request.
