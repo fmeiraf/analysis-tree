@@ -25,12 +25,15 @@ from inside the workspace directory).
 3. **Write `goal.md`.** Expand the one-line goal into real background: why this branch is
    worth exploring, what you expect, and the approach.
 
-4. **Do the work.** For an `analysis` node, create `notebook.ipynb` and execute it **clean**
-   — every cell run top to bottom, zero errors displayed. Execution must run with the node
-   folder as the working directory so relative data paths resolve. Use the first executor
+4. **Do the work.** For an `analysis` node, create the notebook and execute it **clean** —
+   every cell run top to bottom, zero errors displayed. **Name the notebook after your node
+   id**: `<your-id>.ipynb` (e.g. `node_3_price-elasticity.ipynb`), not a bare
+   `notebook.ipynb` — so a notebook is identifiable on its own, outside its folder. If a node
+   needs more than one notebook, prefix each with your node id. Execution must run with the
+   node folder as the working directory so relative data paths resolve. Use the first executor
    available:
    - Prefer the **execute-notebooks** skill if available.
-   - Else `jupyter nbconvert --to notebook --execute --inplace nodes/<your-id>/notebook.ipynb`.
+   - Else `jupyter nbconvert --to notebook --execute --inplace nodes/<your-id>/<your-id>.ipynb`.
    - Else `papermill`, or `nbclient` (`from nbclient import NotebookClient`; set
      `resources={'metadata': {'path': 'nodes/<your-id>'}}`).
    - If **none** is installed, do not fake it: report the missing executor to the master

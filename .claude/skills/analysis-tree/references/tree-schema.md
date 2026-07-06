@@ -40,3 +40,12 @@ expansion from.
 `id = node_<seq>_<slug>`. `seq` is birth order; `slug` is a short kebab summary of the goal.
 The name records *when the node was born*, not *where it sits* — reparenting changes
 `parent_id` but never the name.
+
+Keep the slug **readable** — it's what a human scans in `show`, `path`, and the dashboard.
+By default it's derived from `--goal` (first few words, kebab-cased); when the goal is a long
+sentence, pass a short hand-picked `add --slug "<kebab>"` (2–4 concrete words) so the name
+stays legible instead of a truncated sentence.
+
+An `analysis` node's notebook is named after the node id — `<id>.ipynb` (e.g.
+`node_3_price-elasticity.ipynb`) — so a notebook is identifiable outside its folder;
+`check-notebook <id>` resolves it automatically.

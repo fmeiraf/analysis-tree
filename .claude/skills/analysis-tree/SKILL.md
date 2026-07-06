@@ -59,7 +59,11 @@ Repeat until a stop condition (below):
 2. **Propose.** Choose one frontier node to **expand** and a candidate child goal, justified
    against `objective.md`. State *why this branch, why now*.
 3. **Create.** `node tree.js add --parent <id> --goal "<goal>" --type <type>`. It prints the
-   new node id.
+   new node id. **Make the node name readable.** The id is `node_<seq>_<slug>`, and the slug
+   is what a human scans in `show`, in `path`, and on the dashboard — so make it legible at a
+   glance. The slug derives from `--goal`; when the goal is a long sentence (e.g. a question),
+   pass a short, concrete `--slug "<kebab-case>"` (2–4 words, e.g. `churn-by-cohort`,
+   `price-elasticity`) so the name reads cleanly instead of a truncated sentence.
 4. **Dispatch.** Spawn a subagent pointed at
    [`node-execution.md`](node-execution.md). Hand it: the new node id, the workspace path,
    the goal, and lean starting context — the **chain of conclusions** from root to parent

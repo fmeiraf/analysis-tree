@@ -26,7 +26,8 @@ The default working node: does computation in a notebook.
 
 - required_files:
   - `goal.md` — background, why this branch is worth exploring, and the approach.
-  - `notebook.ipynb` — the analysis, executed top to bottom.
+  - `<node-id>.ipynb` — the analysis, executed top to bottom; named after the node id
+    (e.g. `node_3_price-elasticity.ipynb`) so it's identifiable on its own.
   - `conclusion.md` — what was found, whether it worked, and where to go next.
 - validate:
   - `notebook.ipynb` runs clean: `node tree.js check-notebook <id>` exits 0 (every code

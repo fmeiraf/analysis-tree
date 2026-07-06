@@ -215,7 +215,10 @@ function cmdAdd(ws: string, flags: Record<string, string | boolean>): void {
   if (!all.has(parent)) die(`no such parent: ${parent}`);
 
   const seq = nextSeq(ws);
-  const id = `node_${seq}_${slugify(goal)}`;
+  // Node name derives from the goal, but a long-sentence goal makes an unreadable slug.
+  // Let the master pass a short, hand-picked --slug for a legible name; sanitize either way.
+  const slug = flags.slug ? slugify(String(flags.slug)) : slugify(goal);
+  const id = `node_${seq}_${slug}`;
   const dir = P.nodeDir(ws, id);
   if (fs.existsSync(dir)) die(`node folder already exists: ${id}`);
   fs.mkdirSync(dir, { recursive: true });
@@ -450,8 +453,23 @@ function cmdFind(ws: string, positional: string[]): void {
 function cmdCheckNotebook(ws: string, positional: string[], flags: Record<string, string | boolean>): void {
   const id = positional[0];
   if (!id) die("check-notebook requires <id>");
-  const nbName = typeof flags.file === "string" ? flags.file : "notebook.ipynb";
-  const nbPath = path.join(P.nodeDir(ws, id), nbName);
+  const dir = P.nodeDir(ws, id);
+  // Resolve the notebook: explicit --file wins, else the node-id-named notebook
+  // (`<id>.ipynb`, the convention), else legacy `notebook.ipynb`, else the sole *.ipynb.
+  let nbName: string;
+  if (typeof flags.file === "string") {
+    nbName = flags.file;
+  } else if (fs.existsSync(path.join(dir, `${id}.ipynb`))) {
+    nbName = `${id}.ipynb`;
+  } else if (fs.existsSync(path.join(dir, "notebook.ipynb"))) {
+    nbName = "notebook.ipynb";
+  } else {
+    const ipynbs = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".ipynb")) : [];
+    if (ipynbs.length === 1) nbName = ipynbs[0];
+    else if (ipynbs.length === 0) die(`no notebook found in nodes/${id}/`);
+    else die(`multiple notebooks in nodes/${id}/ — pass --file <name> (${ipynbs.join(", ")})`);
+  }
+  const nbPath = path.join(dir, nbName!);
   if (!fs.existsSync(nbPath)) die(`notebook not found: nodes/${id}/${nbName}`);
   let nb: any;
   try {
@@ -1483,7 +1501,7 @@ function main(): void {
           "usage: node tree.js <verb> [args] [--ws <path>]",
           "",
           "  init --root-goal <text>",
-          "  add --parent <id> --goal <text> [--type <t>] [--created-by <who>]",
+          "  add --parent <id> --goal <text> [--type <t>] [--slug <kebab>] [--created-by <who>]",
           "  set <id> [--status <s>] [--conclusion <text>] [--notebook-ok <bool>]",
           "  status <id> <status>",
           "  reparent <id> <new_parent>",

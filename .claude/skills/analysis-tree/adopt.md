@@ -41,8 +41,11 @@ validation gate you run before committing any node, and you **prompt the user** 
 
 6. **Build the approved tree, parents before children.** For each node, top-down:
    - `node tree.js add --parent <id> --goal "<goal>" --type <type> --created-by adopt` → new id.
-   - Copy the artifact into `nodes/<id>/` under its contract name (notebook → `notebook.ipynb`,
-     report → source for `conclusion.md`). Overwrite the template `goal.md` with a real one: the
+     Give it a **readable name**: pass a short `--slug "<kebab>"` (2–4 words) when the goal is a
+     long sentence, so the node id reads cleanly.
+   - Copy the artifact into `nodes/<id>/` under its contract name (notebook → `<id>.ipynb`,
+     named after the node id; report → source for `conclusion.md`). Overwrite the template
+     `goal.md` with a real one: the
      inferred background **plus a line recording the original path** it was adopted from, so a
      later remount shows the provenance.
    - If an `analysis` node's notebook was already executed, verify it with
