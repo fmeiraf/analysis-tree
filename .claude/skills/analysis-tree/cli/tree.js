@@ -607,7 +607,7 @@ const DASHBOARD_HTML = `<!doctype html>
   #sky.dragging { cursor: grabbing; }
 
   /* ---- edges ---- */
-  .edge { fill: none; stroke: var(--edge); stroke-width: 1; opacity: 0.6; }
+  .edge { fill: none; stroke: var(--edge); stroke-width: 1.1; opacity: 0.7; stroke-linejoin: round; stroke-linecap: round; }
   .edge.to-frontier {
     stroke: color-mix(in oklch, var(--frontier) 55%, var(--edge));
     opacity: 0.85;
@@ -628,16 +628,17 @@ const DASHBOARD_HTML = `<!doctype html>
     font-family: var(--mono);
     font-size: 12px;
     fill: var(--ink-dim);
-    opacity: 0;
+    opacity: 0.55; /* every step stays readable — that's the point of the tree view */
     transition: opacity 0.25s var(--ease), fill 0.25s var(--ease);
     -webkit-user-select: none; user-select: none;
     pointer-events: none;
     paint-order: stroke;
-    stroke: color-mix(in oklch, var(--field) 78%, transparent);
-    stroke-width: 3px;
+    stroke: color-mix(in oklch, var(--field) 80%, transparent);
+    stroke-width: 3.5px;
   }
   .node.labeled .label,
   .node:hover .label,
+  .node.sel .label,
   #sky.zoomed .node .label { opacity: 1; }
 
   /* status kinds — glyph shape carries state, color/glow reinforce */
@@ -871,7 +872,9 @@ const els = {
   drawer: document.getElementById("drawer"),
 };
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const RING = 165;
+const LEVEL_GAP = 96;   // vertical distance between tree depths
+const LEAF_GAP = 158;   // horizontal distance between adjacent leaves
+const GLYPH_R = 11;     // glyph radius, used to inset connectors
 const ZOOM_LABEL_THRESHOLD = 1.35;
 
 const state = {
@@ -919,7 +922,9 @@ function glyphChar(n) {
 }
 function isFrontier(n) { return n.status === "open" || n.status === "promising"; }
 
-/* ---------- layout: radial tidy tree ---------- */
+/* ---------- layout: vertical tidy tree (top-down) ---------- */
+// Leaves are packed left-to-right into equal slots; each parent centers over
+// its children. Subtrees occupy contiguous slot ranges, so nothing overlaps.
 function computeLayout(nodes) {
   const byId = new Map(nodes.map(n => [n.id, n]));
   const kids = new Map();
@@ -936,53 +941,51 @@ function computeLayout(nodes) {
   roots.sort((a, b) => a.seq - b.seq);
 
   const depth = new Map();
-  const angle = new Map();
-  const leaves = [];
-  const post = [];
+  const xOf = new Map();
   const seen = new Set();
-  function dfs(n, d) {
-    if (seen.has(n.id)) return; // guard against cycles from bad data
+  let cursor = 0;
+  function walk(n, d) {
+    if (seen.has(n.id)) return xOf.get(n.id) || 0; // guard against cycles
     seen.add(n.id);
     depth.set(n.id, d);
     const ch = kids.get(n.id) || [];
-    if (ch.length === 0) leaves.push(n.id);
-    for (const c of ch) dfs(c, d + 1);
-    post.push(n.id);
-  }
-  for (const r of roots) dfs(r, 0);
-
-  const leafCount = Math.max(leaves.length, 1);
-  // leave a small gap at the top so the ring doesn't wrap onto itself
-  const SPAN = Math.PI * 2 * (leaves.length > 1 ? 0.92 : 1);
-  const START = -Math.PI / 2 - SPAN / 2 + (leaves.length > 1 ? 0 : Math.PI / 2);
-  leaves.forEach((id, i) => angle.set(id, leafCount === 1 ? 0 : START + (i + 0.5) / leafCount * SPAN));
-  for (const id of post) {
-    const ch = kids.get(id) || [];
-    if (ch.length) {
-      let sum = 0;
-      for (const c of ch) sum += angle.get(c.id) || 0;
-      angle.set(id, sum / ch.length);
+    let x;
+    if (ch.length === 0) {
+      x = cursor * LEAF_GAP;
+      cursor++;
+    } else {
+      const xs = ch.map(c => walk(c, d + 1));
+      x = (xs[0] + xs[xs.length - 1]) / 2;
     }
+    xOf.set(n.id, x);
+    return x;
   }
+  for (const r of roots) { walk(r, 0); cursor++; } // gap between separate roots
 
   const pos = new Map();
   for (const n of nodes) {
     const d = depth.get(n.id) || 0;
-    const a = angle.get(n.id) || 0;
-    const r = d * RING;
-    pos.set(n.id, { x: Math.cos(a) * r, y: Math.sin(a) * r, a, d, r });
+    pos.set(n.id, { x: xOf.get(n.id) || 0, y: d * LEVEL_GAP, d });
   }
   return { byId, kids, roots, pos };
 }
 
+// Orthogonal flowchart connector: down from the parent, a rounded elbow at the
+// midline, across to the child's column, then down into the child.
 function edgePath(p, c) {
-  const rm = (p.r + c.r) / 2;
-  const c1x = Math.cos(p.a) * rm, c1y = Math.sin(p.a) * rm;
-  const c2x = Math.cos(c.a) * rm, c2y = Math.sin(c.a) * rm;
-  return "M" + p.x.toFixed(1) + "," + p.y.toFixed(1) +
-         " C" + c1x.toFixed(1) + "," + c1y.toFixed(1) +
-         " " + c2x.toFixed(1) + "," + c2y.toFixed(1) +
-         " " + c.x.toFixed(1) + "," + c.y.toFixed(1);
+  const py = p.y + GLYPH_R, cy = c.y - GLYPH_R;
+  const midY = (py + cy) / 2;
+  if (Math.abs(c.x - p.x) < 0.5) {
+    return "M" + p.x.toFixed(1) + "," + py.toFixed(1) + " L" + c.x.toFixed(1) + "," + cy.toFixed(1);
+  }
+  const dir = c.x > p.x ? 1 : -1;
+  const r = Math.min(12, Math.abs(c.x - p.x) / 2, Math.abs(midY - py));
+  return "M" + p.x.toFixed(1) + "," + py.toFixed(1) +
+    " L" + p.x.toFixed(1) + "," + (midY - r).toFixed(1) +
+    " Q" + p.x.toFixed(1) + "," + midY.toFixed(1) + " " + (p.x + dir * r).toFixed(1) + "," + midY.toFixed(1) +
+    " L" + (c.x - dir * r).toFixed(1) + "," + midY.toFixed(1) +
+    " Q" + c.x.toFixed(1) + "," + midY.toFixed(1) + " " + c.x.toFixed(1) + "," + (midY + r).toFixed(1) +
+    " L" + c.x.toFixed(1) + "," + cy.toFixed(1);
 }
 
 /* ---------- render ---------- */
@@ -1012,17 +1015,13 @@ function render() {
     if (n.created_by === "adopt") cls.push("adopt");
     if (state.selected === n.id) cls.push("sel");
     if (!state.known.has(n.id) && !state.firstLoad) cls.push("enter");
-    const side = Math.cos(pt.a) >= 0 ? 1 : -1;
-    const lx = pt.d === 0 ? 0 : side * 15;
-    const ly = pt.d === 0 ? 24 : 0;
-    const anchor = pt.d === 0 ? "middle" : (side > 0 ? "start" : "end");
     out +=
       '<g class="' + cls.join(" ") + '" data-id="' + esc(n.id) + '" transform="translate(' + pt.x.toFixed(1) + " " + pt.y.toFixed(1) + ')" tabindex="0" role="treeitem" aria-label="' + esc(shortId(n.id) + ": " + n.goal + " (" + kind + ")") + '">' +
       (n.created_by === "adopt" ? '<circle class="adopt-ring" r="13" vector-effect="non-scaling-stroke"/>' : "") +
       '<circle class="sel-ring" r="14" vector-effect="non-scaling-stroke"/>' +
       '<circle class="hit" r="15"/>' +
       '<text class="glyph" text-anchor="middle" dominant-baseline="central">' + glyphChar(n) + "</text>" +
-      '<text class="label" x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" dominant-baseline="central">' + esc(shortId(n.id)) + "</text>" +
+      '<text class="label" x="0" y="16" text-anchor="middle" dominant-baseline="hanging">' + esc(shortId(n.id)) + "</text>" +
       "</g>";
   }
   els.nodes.innerHTML = out;

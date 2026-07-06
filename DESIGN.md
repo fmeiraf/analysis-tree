@@ -64,9 +64,11 @@ components:
 
 The dashboard is an instrument trained on a live search. You are not reading a file list — you are
 watching an exploration move through a dark field, the way an observatory watches a sky. The tree
-is drawn as a real **decision tree** in space: a **radial constellation** — root at the center,
-branches radiating outward on a pan/zoom canvas, depth carried by distance from center. What
-matters glows. The live **frontier** — the nodes the search could expand next —
+is drawn as a real **top-down decision tree** on a pan/zoom canvas — root at the top, each branch
+descending, depth carried downward, leaves (the live edge of the search) at the bottom. Parents
+center over their children (tidy layout); orthogonal flowchart connectors make each logical
+parent→child step explicit. What matters glows. The live **frontier** — the nodes the search could
+expand next —
 emits a soft phosphor-chartreuse light and breathes; a node being worked pulses brightest; a
 **pruned** branch goes cold and dim and recedes. You feel the state of the search before you read a
 single label.
@@ -78,8 +80,8 @@ the **indented text list with collapse chevrons pretending to be a tree**. This 
 tree; it must look and behave like one. Depth comes from **light and position, not from boxes**.
 
 **Key Characteristics:**
-- A spatial **radial** node-link decision tree on a pan/zoom canvas, not an outline — branches
-  and depth (distance from center) are the layout; the newest frontier auto-centers.
+- A **top-down** node-link decision tree on a pan/zoom canvas, not an outline — branches and depth
+  (downward) are the layout; every node's label stays readable; the camera eases to each new node.
 - One signature light: phosphor-chartreuse marks "alive / on the frontier".
 - State reads pre-attentively through luminance; a distinct glyph always backs the color.
 - Mono-forward and grid-aligned — a precise instrument, dense and calm.
@@ -177,15 +179,16 @@ real structure is its edges and positions.
   violet pill in the drawer; violet is the counter-hue to Phosphor.
 
 ### Canvas (pan / zoom)
-- **Model:** the constellation lives on a pannable, zoomable SVG canvas. Drag to pan, wheel/pinch
-  to zoom about the cursor, `fit` / recenter-on-`frontier` / `+` / `−` controls (also `F` / `C` /
-  `+` / `−` keys). Strokes are non-scaling (hairline at any zoom).
-- **Semantic zoom:** frontier, root, selected, and hovered nodes always show their mono label;
-  resolved/pruned interior nodes are glyph-only until zoomed past threshold or hovered.
+- **Model:** the tree lives on a pannable, zoomable SVG canvas. Drag to pan, wheel/pinch to zoom
+  about the cursor, `fit` / recenter-on-`frontier` / `+` / `−` controls (also `F` / `C` / `+` / `−`
+  keys). Strokes are non-scaling (hairline at any zoom).
+- **Labels:** every node's mono label reads by default (dimmed); frontier, selected, and hovered
+  nodes brighten to full. Readability of the logical steps is the point of the tree view.
 
 ### Edges (tree connectors)
-- **Style:** thin Edge-colored radial bezier curves linking parent→child, drawn as the layout, so
-  the branching *is* the structure. An edge terminating in a frontier node grades toward Phosphor.
+- **Style:** thin Edge-colored **orthogonal flowchart connectors** (down from the parent, a rounded
+  elbow at the midline, across, then down into the child), drawn as the layout, so the branching
+  *is* the structure. An edge terminating in a frontier node grades toward Phosphor.
 
 ### Detail drawer
 - **Surface:** Field Lift, slides in from the right over the full-width canvas; native `<dialog>`
