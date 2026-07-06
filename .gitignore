@@ -1,0 +1,7 @@
+# Only the analysis-tree skill is part of this repo.
+# Every other skill in .claude/skills/ is a personal/local tool — keep it out.
+.claude/skills/*
+!.claude/skills/analysis-tree/
+
+# Machine-local Claude settings (hooks, permissions)
+.claude/settings.local.json
