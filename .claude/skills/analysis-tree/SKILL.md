@@ -98,7 +98,20 @@ Repeat until a stop condition (below):
    `node tree.js set <id> --conclusion "<summary>" --notebook-ok <true|false>` and
    `node tree.js status <id> <promising|dead-end|answered>`. Update the parent's status too
    if this result resolves or kills it. The node is now official.
-7. **Loop.** Return to step 1.
+7. **Reflect.** Before choosing the next expansion, **stop and think thoroughly about what
+   this result changed.** Read the fresh conclusion(s) against `objective.md` and the rest of
+   the frontier and ask: Did this confirm, weaken, or overturn the assumption the current
+   plan rests on? Does it make a planned or open node redundant, wrong, or newly urgent? Does
+   it open a better branch than anything currently on the frontier? Then **act on the answer,
+   don't just note it** — re-order what you expand next, re-scope or drop a stale `open` node,
+   `reparent` a branch that now belongs elsewhere, prune (`dead-end`) a line this result
+   killed, or add a node the finding just suggested. If nothing changed, say so briefly and
+   continue. In **step** mode, surface this reflection (what changed, what you'd re-route) to
+   the user as part of the post-Commit check-in; in **auto** mode, record the re-routing
+   reasoning in the affected node's conclusion so a later remount shows *why* the plan bent.
+   The whole value of the tree is that course-corrections are visible — don't march a stale
+   plan past a result that undercut it.
+8. **Loop.** Return to step 1.
 
 Editing the shape of the tree as understanding shifts is normal: `node tree.js reparent <id>
 <new_parent>` to move a branch, `node tree.js delete <id>` to prune (blocks a non-leaf
@@ -119,8 +132,9 @@ so leave it running in the background while you drive the loop. It runs until st
 Ask the user which mode, or infer from their request.
 
 - **Step** — you drive one node per turn with the human in the loop. Get approval at
-  **Propose** (step 2) before creating, and surface the result after **Commit** (step 6)
-  before continuing. The human decides where to go next; you execute and record.
+  **Propose** (step 2) before creating, and after **Commit** surface both the result and your
+  **Reflect** (step 7) read — what the result changed and how you'd re-route — before
+  continuing. The human decides where to go next; you execute and record.
 - **Auto** — you run the loop yourself without waiting. You still obey every step; you just
   make the Propose decision using judgment over the frontier instead of asking. Bounded by:
   - **Stop** on the first of: the `objective.md` success criteria are met; the frontier is
