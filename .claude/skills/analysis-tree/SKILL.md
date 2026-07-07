@@ -23,6 +23,14 @@ Every exploration is a self-contained directory: `explorations/<slug>/` holding
 the CLI as `node tree.js <verb>` from inside it (it resolves the workspace from the script's
 location). Full CLI: run `node tree.js` with no args.
 
+**Where `explorations/` lives.** Create it at the **root of the user's current
+project** — the directory Claude Code was launched in (the working directory), i.e.
+`./explorations/<slug>/`. **Never** create it inside the skill's own folder
+(`.claude/skills/analysis-tree/`) or anywhere under the analysis-tree tool repo — the
+exploration belongs to the user's project, not the tool. If the user names a different
+location, use that instead. When in doubt about the project root, confirm the path with the
+user before scaffolding.
+
 The `node.md` in the workspace is the **source of truth** for what each node type requires —
 read it every run; never hardcode node requirements. Its schema and the tree mechanics live
 in [`references/node.md`](references/node.md) and
@@ -31,7 +39,9 @@ in [`references/node.md`](references/node.md) and
 ## Entry: new exploration or remount
 
 **If the user is starting a new exploration:**
-1. Pick a `<slug>` and create `explorations/<slug>/`.
+1. Pick a `<slug>` and create `explorations/<slug>/` **at the user's project root** (their
+   working directory, `./explorations/<slug>/`), not inside the skill folder — see
+   **Workspace** above.
 2. Copy the skill's `references/node.md` → `explorations/<slug>/node.md` and the skill's
    `cli/tree.js` → `explorations/<slug>/tree.js`.
 3. **Interview the user** to write `objective.md`: the overall question, explicit **success

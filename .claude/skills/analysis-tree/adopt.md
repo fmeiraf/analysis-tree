@@ -13,7 +13,9 @@ validation gate you run before committing any node, and you **prompt the user** 
 ## Steps
 
 1. **Scaffold the workspace.** As for a new exploration: pick a `<slug>`, create
-   `explorations/<slug>/`, and copy the skill's `references/node.md` and `cli/tree.js` into it.
+   `explorations/<slug>/` **at the user's project root** (their working directory,
+   `./explorations/<slug>/`) — never inside the skill folder or the analysis-tree tool repo —
+   and copy the skill's `references/node.md` and `cli/tree.js` into it.
 
 2. **Establish the objective.** An adopted repo rarely states one. Draft an `objective.md` from
    the repo's own signals — READMEs, report headings, notebook titles — then confirm and refine
