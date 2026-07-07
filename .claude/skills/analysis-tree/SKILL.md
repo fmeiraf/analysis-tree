@@ -67,7 +67,14 @@ Repeat until a stop condition (below):
 1. **Remount.** `node tree.js show` (add `--full` for conclusions). Read the frontier —
    every `open` / `promising` node.
 2. **Propose.** Choose one frontier node to **expand** and a candidate child goal, justified
-   against `objective.md`. State *why this branch, why now*.
+   against `objective.md`. State *why this branch, why now*. **Always ask first whether this
+   step is really one node or several.** If the objective invites **independent** lines of
+   inquiry — competing hypotheses, different data slices/cohorts, alternative methods, or
+   separate sub-questions that don't depend on each other's results — propose them as a
+   **batch of parallel nodes** (siblings under the same parent, or spread across the frontier)
+   rather than forcing them into a serial chain. Only chain when a node genuinely *needs* a
+   prior node's conclusion to be defined. State which proposed nodes are parallel and which
+   are dependent.
 3. **Create.** `node tree.js add --parent <id> --goal "<goal>" --type <type>`. It prints the
    new node id. **Make the node name readable.** The id is `node_<seq>_<slug>`, and the slug
    is what a human scans in `show`, in `path`, and on the dashboard — so make it legible at a
@@ -79,6 +86,11 @@ Repeat until a stop condition (below):
    the goal, and lean starting context — the **chain of conclusions** from root to parent
    (cheap; it's in the log) plus the parent's full `conclusion.md`. The subagent can hydrate
    more via the CLI itself, so keep the bundle small.
+   **Dispatch independent nodes concurrently.** When you created a batch of parallel nodes in
+   steps 2–3, spawn their subagents **at once** (multiple subagents in a single turn) instead
+   of one after another — they never touch `tree.jsonl` (only you do), so concurrent execution
+   is safe and much faster. Keep the fan-out small and sane (a handful, not dozens), and
+   collect their reports before moving on to Validate/Commit.
 5. **Validate.** When it returns, check its node against `node.md`: every `required_file`
    present, and for an `analysis` node run `node tree.js check-notebook <id>` yourself —
    never trust the report alone. If validation fails, send it back or fix and re-dispatch.
@@ -116,9 +128,10 @@ Ask the user which mode, or infer from their request.
     ask the user to override).
   - **Checkpoint** every **10** nodes and at every stop: show the tree and pause for the
     human to redirect or continue.
-  - **Sequential** by default. You may **expand siblings in parallel** only for genuinely
-    independent hypotheses, capped small — the single-writer log makes concurrent subagents
-    safe, but you still commit each result yourself, one at a time.
+  - **Parallelize independent branches** (loop steps 2 & 4): when the frontier offers genuinely
+    independent hypotheses, propose them as a batch and spawn their subagents concurrently,
+    capped small — the single-writer log makes concurrent subagents safe. You still **commit
+    each result yourself, one at a time**, and each parallel node counts against `max-nodes`.
 
 The `max-nodes` budget is the non-negotiable backstop: honor it even if you believe the
 objective is nearly met.

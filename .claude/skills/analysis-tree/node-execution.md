@@ -60,3 +60,9 @@ from inside the workspace directory).
 Never write `tree.jsonl`, never create sibling or child nodes, never wander outside your
 goal. If your goal turns out to be wrong or too big, say so in your report — proposing the
 re-scope is the master's call, not yours.
+
+**You may be running in parallel** with sibling subagents on other nodes. That is safe
+*because* everyone stays in their lane: touch only your own `nodes/<your-id>/` folder, never
+another node's files, and never `tree.jsonl`. Do not assume a sibling's results exist yet —
+if you need something from another branch, it belongs in your report as a dependency for the
+master, not a file you go read from a node still being worked.
